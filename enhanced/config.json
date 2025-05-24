@@ -1,0 +1,18 @@
+{
+  "api": {
+    "api_key": "",
+    "base_url": "URL tùy provider. Ví dụ OpenAI: https://api.openai.com/v1",
+    "model": "tên model theo provider. Ví dụ: gpt-4o",
+    "max_tokens": 50000
+  },
+  // json không comment được, nhớ xóa comment
+  "translation": {
+    "temperature": 1.0, // temp khuyến nghị cho dịch thuật là 0.7
+    "delay": 2, // delay giữa các request. Tùy provider, nếu mà hàng chính hãng hay openrouter thì chỉnh tầm 5-10s delay gì đó, kẻo dính rate limit
+    "concurrent_requests": 6 // số request tối đa cùng lúc, thích nhiêu chơi nhiêu
+  },
+  "paths": { 
+    "output_dir": "Đường dẫn thư mục output. Ví dụ: output\\tên_truyện",
+    "log_dir": "Đường dẫn thư mục log. Ví dụ: log\\tên_truyện"
+  }
+}
