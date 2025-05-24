@@ -3,6 +3,8 @@ import yaml
 import cn2an
 import os
 
+# Tách TXT thành các segment với ID là Volume_X_Chapter_Y_Segment_Z
+
 class CustomDumper(yaml.Dumper):
     def represent_scalar(self, tag, value, style=None):
         if tag == 'tag:yaml.org,2002:str' and "\n" in value:

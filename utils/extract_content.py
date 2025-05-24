@@ -3,6 +3,8 @@ import sys
 from bs4 import BeautifulSoup
 import re
 
+# Bóc nội dung từ web linovelib
+
 def extract_content(html_file_path, output_file_path=None):
     """
     Trích xuất tiêu đề và nội dung từ file HTML, loại bỏ các thẻ HTML.

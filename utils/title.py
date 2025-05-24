@@ -1,5 +1,7 @@
 import yaml
 
+# Bóc tiêu đề từ file YAML
+
 def extract_unique_titles_to_txt(input_file, output_file):
     """
     Trích xuất các tiêu đề duy nhất từ các chương và lưu vào file TXT.

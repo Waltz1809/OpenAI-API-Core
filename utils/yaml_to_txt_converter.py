@@ -2,6 +2,8 @@ import yaml
 import re
 import os
 
+# Chuyển yaml thành txt dựa trên ID
+
 def extract_chapter_info(segment_id):
     """Trích xuất thông tin quyển, chương và segment từ ID segment"""
     # Nhận diện dạng Volume_X_Chapter_Y_Segment_Z
