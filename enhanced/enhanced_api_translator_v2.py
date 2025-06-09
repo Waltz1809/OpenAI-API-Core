@@ -8,8 +8,6 @@ import threading
 import queue
 from datetime import datetime
 
-# Này để gửi request đến API rồi dịch
-
 class CustomDumper(yaml.Dumper):
     def represent_scalar(self, tag, value, style=None):
         if tag == 'tag:yaml.org,2002:str' and "\n" in value:

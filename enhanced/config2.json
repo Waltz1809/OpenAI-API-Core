@@ -7,11 +7,18 @@
   },
   "translation": {
     "temperature": 1.0,
-    "delay": 2,
+    "delay": 5,
     "concurrent_requests": 6
   },
   "paths": {
     "output_dir": "paths/output",
     "log_dir": "paths/log"
+  },
+  "generation_config": {
+    "temperature": 0.7,
+    "max_output_tokens": 8192
+  },
+  "safety_settings": {
+    "disable_all": true
   }
 }

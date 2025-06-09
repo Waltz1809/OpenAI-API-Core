@@ -3,8 +3,6 @@ import yaml
 import cn2an
 import os
 
-# Tách TXT thành các segment với ID là Volume_X_Chapter_Y_Segment_Z
-
 class CustomDumper(yaml.Dumper):
     def represent_scalar(self, tag, value, style=None):
         if tag == 'tag:yaml.org,2002:str' and "\n" in value:
@@ -225,10 +223,23 @@ def detect_chapter_title(line, max_chapter, previous_chapter_number):
 
 def split_content(file_path, max_chapter):
     """Tách file thành các chương, phần nhỏ và phần đặc biệt."""
-    # Đọc file và loại bỏ BOM nếu có
-    with open(file_path, 'r', encoding='utf-8-sig') as file:
-        content = file.read()
+    # Thử mở file với các mã hóa phổ biến để xử lý lỗi Unicode
+    encodings_to_try = ['utf-16', 'utf-8', 'utf-8-sig', 'gbk', 'big5']
+    content = None
+    for encoding in encodings_to_try:
+        try:
+            with open(file_path, 'r', encoding=encoding) as file:
+                content = file.read()
+            print(f"✅ Đọc file thành công với mã hóa: {encoding}")
+            break  # Thoát khỏi vòng lặp nếu đọc thành công
+        except (UnicodeDecodeError, UnicodeError):
+            print(f"⚠️  Thử mã hóa '{encoding}' thất bại, đang thử mã hóa tiếp theo...")
+            continue  # Thử mã hóa tiếp theo
     
+    if content is None:
+        print(f"❌ Lỗi nghiêm trọng: Không thể đọc file '{file_path}' với bất kỳ mã hóa nào được hỗ trợ.")
+        return []
+
     # Tiền xử lý nội dung để xử lý các subsection marker
     # Chuyển đổi các subsection marker (như "1.1") thành đánh dấu đặc biệt để xử lý sau
     # Thêm "<subsection>" vào đầu dòng để đánh dấu

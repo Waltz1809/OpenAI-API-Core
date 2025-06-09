@@ -1,0 +1,37 @@
+{
+  "active_task": {
+    "task_name": "task_name",
+    "workflow_mode": "retry",
+    "source_yaml_file": "source_yaml_file",
+    "source_log_file_for_retry": "LATEST"
+  },
+  "translate_api_settings": {
+    "comment": "Cấu hình cho lần dịch đầu tiên (tương tự config2.json)",
+    "api_key": "api_key",
+    "base_url": "endpoint",
+    "model": "model",
+    "temperature": 1.0,
+    "concurrent_requests": 6,
+    "max_tokens": 50000
+  },
+  "retry_api_settings": {
+    "comment": "Cấu hình để retry các segment lỗi (tương tự config.json)",
+    "api_key": "api_key",
+    "base_url": "endpoint",
+    "model": "model",
+    "temperature": 1.0,
+    "concurrent_requests": 3,
+    "max_retries_on_fail": 3,
+    "max_tokens": 50000
+  },
+  "cleaner_settings": {
+    "enabled": true,
+    "remove_thinking_blocks": true
+  },
+  "paths": {
+    "output_dir": "paths/output",
+    "log_dir": "paths/log",
+    "prompt_file": "paths/prompt_file",
+    "intermediate_dir": "test/results/temp"
+  }
+} 
