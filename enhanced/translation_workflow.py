@@ -7,8 +7,6 @@ MODULE này được gọi bởi master_workflow.py
 import yaml
 import time
 import openai
-import re
-import json
 import os
 import threading
 import queue

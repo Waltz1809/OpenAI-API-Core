@@ -5,7 +5,6 @@ Kết hợp log_analyzer.py và retry_translator.py thành một workflow tự �
 """
 
 import os
-import sys
 import yaml
 import openai
 from datetime import datetime
