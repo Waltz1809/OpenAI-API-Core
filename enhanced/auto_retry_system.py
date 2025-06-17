@@ -5,6 +5,7 @@ Kết hợp log_analyzer.py và retry_translator.py thành một workflow tự �
 """
 
 import os
+import sys
 import yaml
 import openai
 from datetime import datetime
@@ -13,7 +14,7 @@ import re
 # Chuyển đổi sang import tuyệt đối để tương thích với master_workflow
 from log_analyzer import LogAnalyzer
 from retry_translator import retry_failed_segments, load_json, load_prompt, get_retry_log_filename
-from clean_segment import CustomDumper
+from clean_segment import CustomDumper, clean_text
 
 def create_sample_config():
     """Tạo file config mẫu nếu chưa có."""
@@ -169,7 +170,16 @@ def retry_workflow(master_config):
         
         # Bước 2b: Hợp nhất kết quả và ghi đè
         if fixed_segments:
-            print("\n" + "="*20 + " BƯỚC 3: HỢP NHẤT VÀ GHI ĐÈ " + "="*20)
+            print("\n" + "="*20 + " BƯỚC 3: DỌN DẸP VÀ HỢP NHẤT " + "="*20)
+            
+            # --- BƯỚC 3a: Dọn dẹp nội dung đã dịch lại ---
+            print(f"🧼 Đang dọn dẹp {len(fixed_segments)} segment đã được dịch lại...")
+            for segment in fixed_segments:
+                if 'content' in segment and segment['content']:
+                    segment['content'] = clean_text(segment['content'])
+            print("✅ Dọn dẹp hoàn tất.")
+
+            # --- BƯỚC 3b: Hợp nhất kết quả vào file ---
             print(f"🔧 Đang hợp nhất {len(fixed_segments)} bản vá vào file: {target_yaml_to_patch_path}")
 
             # Đọc file gốc cần vá lỗi

@@ -7,6 +7,8 @@ MODULE này được gọi bởi master_workflow.py
 import yaml
 import time
 import openai
+import re
+import json
 import os
 import threading
 import queue
@@ -48,6 +50,111 @@ def write_log(log_file, segment_id, status, error=None):
     with open(log_file, 'a', encoding='utf-8') as f:
         f.write(log_message + "\n")
     print(log_message)
+
+def title_worker(q, result_dict, client, system_prompt, model, temperature, log_file, lock, delay):
+    """Hàm worker cho thread xử lý dịch title. Tối ưu cho workflow."""
+    while not q.empty():
+        try:
+            item = q.get(block=False)
+            chapter_id, original_title = item
+            
+            try:
+                response = client.chat.completions.create(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": f"Dịch tiêu đề sau từ tiếng Trung sang tiếng Việt, giữ cho ngắn gọn và phù hợp:\n\n{original_title}"}
+                    ],
+                    model=model,
+                    temperature=temperature,
+                    max_tokens=200
+                )
+                
+                api_content = response.choices[0].message.content if response.choices and response.choices[0].message else None
+                if not api_content:
+                    raise ValueError("API không trả về nội dung dịch.")
+                
+                translated_title = api_content.strip().replace('"', '')
+                with lock:
+                    result_dict[chapter_id] = translated_title
+                    write_log(log_file, f"Title - Chapter: {chapter_id}", "THÀNH CÔNG", f"'{original_title}' -> '{translated_title}'")
+
+            except Exception as e:
+                with lock:
+                    result_dict[chapter_id] = original_title # Giữ lại title gốc nếu lỗi
+                    write_log(log_file, f"Title - Chapter: {chapter_id}", "THẤT BẠI", str(e))
+            
+            q.task_done()
+            time.sleep(delay)
+        except queue.Empty:
+            break
+
+def translate_titles_in_data(segments, client, system_prompt, config, log_file):
+    """
+    Dịch các tiêu đề có trong dữ liệu segment.
+    Sử dụng lại logic tối ưu: nhóm theo chương, dịch 1 lần.
+    """
+    print("\n" + "-"*20 + " BƯỚC 1.5: DỊCH TIÊU ĐỀ " + "-"*20)
+
+    # 1. Nhóm các segment theo chương và lấy tiêu đề duy nhất
+    chapters_to_translate = {}
+    chapter_id_pattern = re.compile(r'(Volume_\d+_Chapter_\d+|Chapter_\d+)')
+
+    for segment in segments:
+        chapter_id_match = chapter_id_pattern.search(segment.get('id', ''))
+        chapter_id = chapter_id_match.group(0) if chapter_id_match else segment.get('id')
+        if not chapter_id:
+            continue
+        original_title = segment.get('title')
+        if original_title and original_title.strip() and chapter_id not in chapters_to_translate:
+            chapters_to_translate[chapter_id] = original_title
+
+    if not chapters_to_translate:
+        print("Không tìm thấy tiêu đề mới cần dịch. Bỏ qua.")
+        return segments
+    
+    print(f"🔍 Tìm thấy {len(chapters_to_translate)} tiêu đề chương duy nhất cần dịch.")
+
+    # 2. Dịch các tiêu đề bằng threading
+    q = queue.Queue()
+    translated_titles_map = {}
+    lock = threading.Lock()
+    
+    for chapter_id, title in chapters_to_translate.items():
+        q.put((chapter_id, title))
+        translated_titles_map[chapter_id] = None # Khởi tạo
+
+    api_config = config['translate_api_settings'] # Dùng chung API setting với content
+    title_config = config['title_translation_settings']
+    num_threads = min(api_config.get("concurrent_requests", 5), len(chapters_to_translate))
+    threads = []
+    
+    for _ in range(num_threads):
+        t = threading.Thread(
+            target=title_worker,
+            args=(q, translated_titles_map, client, system_prompt, api_config["model"], 
+                  api_config["temperature"], log_file, lock, api_config.get("delay", 1))
+        )
+        t.daemon = True
+        t.start()
+        threads.append(t)
+    
+    for t in threads:
+        t.join()
+
+    # 3. Cập nhật lại dữ liệu YAML gốc với các tiêu đề đã dịch
+    update_count = 0
+    for segment in segments:
+        chapter_id_match = chapter_id_pattern.search(segment.get('id', ''))
+        chapter_id = chapter_id_match.group(0) if chapter_id_match else segment.get('id')
+
+        if chapter_id and chapter_id in translated_titles_map:
+            translated_title = translated_titles_map[chapter_id]
+            if segment.get('title') != translated_title:
+                segment['title'] = translated_title
+                update_count += 1
+    
+    print(f"🔄 Đã áp dụng bản dịch tiêu đề cho {update_count} segment.")
+    return segments
 
 def worker(q, result_dict, client, system_prompt, model, temperature, max_tokens, log_file, total_segments, lock, delay):
     while not q.empty():
@@ -138,6 +245,7 @@ def translation_workflow(master_config):
     paths = master_config['paths']
     active_task = master_config['active_task']
     cleaner_settings = master_config['cleaner_settings']
+    title_settings = master_config.get('title_translation_settings', {})
 
     input_file = active_task.get('source_yaml_file')
     if not input_file or not os.path.exists(input_file):
@@ -184,6 +292,17 @@ def translation_workflow(master_config):
     if not translated_segments:
         print("\n❌ Dịch thuật thất bại, không có segment nào được trả về. Dừng workflow.")
         return
+
+    # ================= BƯỚC 1.5: DỊCH TIÊU ĐỀ (TÙY CHỌN) =================
+    if title_settings.get('enabled', False):
+        title_prompt_file = title_settings.get('title_prompt_file')
+        if not title_prompt_file or not os.path.exists(title_prompt_file):
+            print(f"⚠️  Cảnh báo: Không tìm thấy file prompt cho tiêu đề tại '{title_prompt_file}'. Bỏ qua dịch tiêu đề.")
+        else:
+            title_system_prompt = load_prompt(title_prompt_file)
+            translated_segments = translate_titles_in_data(
+                translated_segments, client, title_system_prompt, master_config, log_file
+            )
 
     save_yaml(translated_segments, temp_trans_file)
     print(f"\n✅ Bước 1 hoàn thành! Kết quả dịch thô lưu tại: {temp_trans_file}")

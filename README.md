@@ -22,7 +22,7 @@ Install PyYaml
 
 ### 2. Chuẩn bị tệp tin
 
-- **Tệp cần dịch**: Tệp này chứa văn bản/bộ truyện muốn dịch. Định dạng tốt nhất là:
+- **Tệp cần dịch**: Tệp .txt chứa văn bản/bộ truyện muốn dịch. Định dạng tốt nhất là:
 Quyển X:
 Chương Y:
 Nội dung chương.

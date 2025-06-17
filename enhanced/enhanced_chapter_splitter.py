@@ -65,13 +65,26 @@ def detect_special_section(line):
     line = remove_bom(line)
     
     # Các pattern nhận diện phần đặc biệt
-    prologue_match = re.match(r'^序章[「『](.+)[」』]', line)
-    epilogue_match = re.match(r'^后记$', line)
+    prologue_match = re.match(r'^序章[「『](.+)[」『]', line)
+    epilogue_match = re.match(r'^(后记|後記)$', line)
     foreword_match = re.match(r'^(前言|绪言|引言|序言)$', line)
     final_chapter_match = re.match(r'^终章', line)
     
+    # Các định dạng mới từ người dùng
+    prologue_maku_match = re.match(r'^(序幕／.*)$', line)
+    if prologue_maku_match:
+        return "prologue", prologue_maku_match.group(1).strip()
+        
+    final_maku_match = re.match(r'^(終幕／.*)$', line)
+    if final_maku_match:
+        return "final_chapter", final_maku_match.group(1).strip()
+        
+    interlude_match = re.match(r'^(里幕)$', line)
+    if interlude_match:
+        return "interlude", "里幕"
+
     # Kiểm tra xem line có bắt đầu bằng "序章" không
-    if "序章" in line:
+    if line.startswith("序章"):
         # Cố gắng trích xuất nội dung trong dấu ngoặc
         match = re.search(r'序章[「『](.+?)[」』]', line)
         if match:
@@ -79,7 +92,7 @@ def detect_special_section(line):
         else:
             return "prologue", "序章"
     elif epilogue_match:
-        return "epilogue", "后记"
+        return "epilogue", epilogue_match.group(1)
     elif foreword_match:
         return "foreword", foreword_match.group(1)
     elif final_chapter_match:
@@ -193,6 +206,9 @@ def detect_chapter_title(line, max_chapter, previous_chapter_number):
     # Thêm pattern nhận diện 第X话 (tiếng Nhật: thoại/chương thứ X)
     match_chinese_hua = re.match(r'^第([零一二三四五六七八九十百千]+)话', line)
     match_arabic_hua = re.match(r'^第(\d{1,3})话', line)
+    # Thêm pattern nhận diện 第X幕 (Mạc/Màn kịch)
+    match_chinese_maku = re.match(r'^第([零一二三四五六七八九十百千]+)幕', line)
+    match_arabic_maku = re.match(r'^第(\d{1,3})幕', line)
 
     chapter_number = None
     title = None
@@ -214,6 +230,12 @@ def detect_chapter_title(line, max_chapter, previous_chapter_number):
         title = line
     elif match_arabic_hua:
         chapter_number = int(match_arabic_hua.group(1))
+        title = line
+    elif match_chinese_maku:
+        chapter_number = convert_chinese_number_to_arabic(match_chinese_maku.group(1))
+        title = line
+    elif match_arabic_maku:
+        chapter_number = int(match_arabic_maku.group(1))
         title = line
 
     # Kiểm tra số chương có hợp lệ không
@@ -391,6 +413,17 @@ def split_content(file_path, max_chapter):
                 else:
                     current_section_id = f"Chapter_{epilogue_chapter_num}"
                 current_chapter_for_segment = epilogue_chapter_num
+            elif special_id == "interlude":
+                # Xử lý interlude, coi nó như một chương đặc biệt
+                volume_key = current_volume_number or 0
+                max_chapter_in_volume = max_chapter_by_volume.get(volume_key, 0)
+                # Đặt nó sau chương cuối cùng đã thấy
+                interlude_chapter_num = max_chapter_in_volume + 1
+                if current_volume_number:
+                    current_section_id = f"Volume_{current_volume_number}_Chapter_{interlude_chapter_num}"
+                else:
+                    current_section_id = f"Chapter_{interlude_chapter_num}"
+                current_chapter_for_segment = interlude_chapter_num
             else:
                 # Các phần đặc biệt khác
                 if current_volume_number:

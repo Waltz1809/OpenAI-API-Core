@@ -1,0 +1,73 @@
+{
+    "credentials": {
+        "username": "",
+        "password": ""
+    },
+    "yaml_filepath": "test\\results\\output\\magika\\magika_cleaned.yaml",
+    "set_as_incomplete": true,
+    "volumes_to_upload": [
+        {
+            "volume_id_prefix": "Volume_1",
+            "management_url": "https://docln.sbs/action/series/22142/manage?book_id=30122&action=createchapter"
+        },
+        {
+            "volume_id_prefix": "Volume_2",
+            "management_url": "https://docln.sbs/action/series/22142/manage?book_id=30123&action=createchapter"
+        },
+        {
+            "volume_id_prefix": "Volume_3",
+            "management_url": "https://docln.sbs/action/series/22142/manage?book_id=30124&action=createchapter"
+        },
+        {
+            "volume_id_prefix": "Volume_4",
+            "management_url": "https://docln.sbs/action/series/22142/manage?book_id=30125&action=createchapter"
+        },
+        {
+            "volume_id_prefix": "Volume_5",
+            "management_url": "https://docln.sbs/action/series/22142/manage?book_id=30126&action=createchapter"
+        },
+        {
+            "volume_id_prefix": "Volume_6",
+            "management_url": "https://docln.sbs/action/series/22142/manage?book_id=30127&action=createchapter"
+        },
+        {
+            "volume_id_prefix": "Volume_7",
+            "management_url": "https://docln.sbs/action/series/22142/manage?book_id=30128&action=createchapter"
+        },
+        {
+            "volume_id_prefix": "Volume_8",
+            "management_url": "https://docln.sbs/action/series/22142/manage?book_id=30129&action=createchapter"
+        },
+        {
+            "volume_id_prefix": "Volume_9",
+            "management_url": "https://docln.sbs/action/series/22142/manage?book_id=30130&action=createchapter"
+        },
+        {
+            "volume_id_prefix": "Volume_10",
+            "management_url": "https://docln.sbs/action/series/22142/manage?book_id=30131&action=createchapter"
+        },
+        {
+            "volume_id_prefix": "Volume_11",
+            "management_url": "https://docln.sbs/action/series/22142/manage?book_id=30132&action=createchapter"
+        },
+        {
+            "volume_id_prefix": "Volume_12",
+            "management_url": "https://docln.sbs/action/series/22142/manage?book_id=30133&action=createchapter"
+        },
+        {
+            "volume_id_prefix": "Volume_13",
+            "management_url": "https://docln.sbs/action/series/22142/manage?book_id=30134&action=createchapter"
+        },
+        {
+            "volume_id_prefix": "Volume_14",
+            "management_url": "https://docln.sbs/action/series/22142/manage?book_id=30135&action=createchapter"
+        }
+    ],
+    "selectors": {
+        "title": "role=textbox",
+        "editor_iframe": "iframe[title=\"Rich Text Area\"]",
+        "editor_body": "#tinymce",
+        "submit_button": "role=button[name=\"Thêm chương\"]",
+        "incomplete_radio_button": "role=radio[name=\"Chưa hoàn thành\"]"
+    }
+} 

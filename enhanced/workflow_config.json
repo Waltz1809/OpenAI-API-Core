@@ -1,24 +1,24 @@
 {
   "active_task": {
-    "task_name": "task_name",
+    "task_name": "Dịch và Dọn dẹp Truyện magika",
     "workflow_mode": "retry",
-    "source_yaml_file": "source_yaml_file",
+    "source_yaml_file": "test/data/API_content/magika/magika.yaml",
     "source_log_file_for_retry": "LATEST"
   },
   "translate_api_settings": {
     "comment": "Cấu hình cho lần dịch đầu tiên (tương tự config2.json)",
-    "api_key": "api_key",
-    "base_url": "endpoint",
-    "model": "model",
+    "api_key": "",
+    "base_url": "",
+    "model": "gemini-2.5-flash-preview-05-20",
     "temperature": 1.0,
     "concurrent_requests": 6,
     "max_tokens": 50000
   },
   "retry_api_settings": {
     "comment": "Cấu hình để retry các segment lỗi (tương tự config.json)",
-    "api_key": "api_key",
-    "base_url": "endpoint",
-    "model": "model",
+    "api_key": "",
+    "base_url": "",
+    "model": "deepseek:deepseek-reasoner",
     "temperature": 1.0,
     "concurrent_requests": 3,
     "max_retries_on_fail": 3,
@@ -29,9 +29,13 @@
     "remove_thinking_blocks": true
   },
   "paths": {
-    "output_dir": "paths/output",
-    "log_dir": "paths/log",
-    "prompt_file": "paths/prompt_file",
+    "output_dir": "test/results/output/magika",
+    "log_dir": "test/results/translation_log/magika",
+    "prompt_file": "test/data/system/magika/system_magika.txt",
     "intermediate_dir": "test/results/temp"
+  },
+  "title_translation_settings": {
+    "enabled": true,
+    "title_prompt_file": "test/python/prompts/system_prompt_title.txt"
   }
 } 

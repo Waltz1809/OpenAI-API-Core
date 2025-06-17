@@ -1,4 +1,5 @@
 import yaml
+import re
 import os
 
 # YAML Dumper tùy chỉnh để giữ định dạng đẹp
