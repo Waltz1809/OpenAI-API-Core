@@ -1,0 +1,15 @@
+{
+  "api_settings": {
+    "api_key": "",
+    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+    "model": "gemini-2.0-flash",
+    "temperature": 0.4,
+    "max_tokens": 25000,
+    "concurrent_requests": 3
+  },
+  "paths": {
+    "source_yaml_file": "test/data/API_content/duke/duke_1.yaml",
+    "system_prompt_file": "test/data/system/context_system.txt",
+    "output_dir": "test/results/analysis/duke"
+  }
+} 

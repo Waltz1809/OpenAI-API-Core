@@ -2,9 +2,6 @@ import yaml
 import re
 import os
 
-# Cái này là để clean lại đoạn trả về. Vì dù đã có rule nhưng thi thoảng API vẫn trả về không theo format mà sẽ hơi lỗi tí.
-# Kiểu: Em chào anh /n/n Anh chào em
-
 # YAML Dumper tùy chỉnh để giữ định dạng đẹp
 class CustomDumper(yaml.Dumper):
     def represent_scalar(self, tag, value, style=None):

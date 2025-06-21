@@ -26,7 +26,7 @@ def is_valid_chapter_number(chapter_number, previous_chapter, max_chapter):
     """Kiểm tra số chương hợp lệ."""
     if chapter_number is None:
         return False
-    if chapter_number < 1 or chapter_number > max_chapter:
+    if chapter_number < 0 or chapter_number > max_chapter:
         return False
     if previous_chapter is None or chapter_number == previous_chapter + 1 or chapter_number == 1:
         return True
@@ -65,7 +65,6 @@ def detect_special_section(line):
     line = remove_bom(line)
     
     # Các pattern nhận diện phần đặc biệt
-    prologue_match = re.match(r'^序章[「『](.+)[」『]', line)
     epilogue_match = re.match(r'^(后记|後記)$', line)
     foreword_match = re.match(r'^(前言|绪言|引言|序言)$', line)
     final_chapter_match = re.match(r'^终章', line)
@@ -79,9 +78,22 @@ def detect_special_section(line):
     if final_maku_match:
         return "final_chapter", final_maku_match.group(1).strip()
         
-    interlude_match = re.match(r'^(里幕)$', line)
+    interlude_match = re.match(r'^(里幕|幕间|幕間|特典)$', line)
     if interlude_match:
-        return "interlude", "里幕"
+        return "interlude", interlude_match.group(1)
+
+    # Các pattern cho tiếng Anh
+    prologue_match_en = re.match(r'^(Prologue)([:\s].*)?$', line, re.IGNORECASE)
+    if prologue_match_en:
+        return "prologue", line.strip()
+
+    epilogue_match_en = re.match(r'^(Epilogue)([:\s].*)?$', line, re.IGNORECASE)
+    if epilogue_match_en:
+        return "epilogue", line.strip()
+
+    interlude_match_en = re.match(r'^(Interlude)([:\s].*)?$', line, re.IGNORECASE)
+    if interlude_match_en:
+        return "interlude", line.strip()
 
     # Kiểm tra xem line có bắt đầu bằng "序章" không
     if line.startswith("序章"):
@@ -198,49 +210,39 @@ def detect_chapter_title(line, max_chapter, previous_chapter_number):
     # Loại bỏ BOM nếu có
     line = remove_bom(line)
     
-    # Các pattern nhận diện tiêu đề chương
+    # Các pattern nhận diện tiêu đề chương, được đơn giản hóa để chỉ lấy số chương
     match_chinese = re.match(r'^第([零一二三四五六七八九十百千]+)章', line)
     match_arabic = re.match(r'^第(\d{1,3})章', line)
-    match_vietnamese = re.match(r'^[Cc]hương\s*(\d{1,3})[.:]?\s*(.*)$', line)
-    match_chap = re.match(r'^[Cc]hap\s*(\d{1,3})[.:]?\s*(.*)$', line)
-    # Thêm pattern nhận diện 第X话 (tiếng Nhật: thoại/chương thứ X)
+    match_vietnamese = re.match(r'^[Cc]hương\s*(\d{1,3})', line, re.IGNORECASE)
+    match_chap = re.match(r'^[Cc]hap\s*(\d{1,3})', line, re.IGNORECASE)
     match_chinese_hua = re.match(r'^第([零一二三四五六七八九十百千]+)话', line)
     match_arabic_hua = re.match(r'^第(\d{1,3})话', line)
-    # Thêm pattern nhận diện 第X幕 (Mạc/Màn kịch)
     match_chinese_maku = re.match(r'^第([零一二三四五六七八九十百千]+)幕', line)
     match_arabic_maku = re.match(r'^第(\d{1,3})幕', line)
 
     chapter_number = None
-    title = None
+    title = line.strip() # SỬA: Luôn lấy cả dòng làm tiêu đề để đảm bảo chính xác
 
     if match_chinese:
         chapter_number = convert_chinese_number_to_arabic(match_chinese.group(1))
-        title = line
     elif match_arabic:
         chapter_number = int(match_arabic.group(1))
-        title = line
     elif match_vietnamese:
         chapter_number = int(match_vietnamese.group(1))
-        title = f"Chương {chapter_number}: {match_vietnamese.group(2)}"
     elif match_chap:
         chapter_number = int(match_chap.group(1))
-        title = f"Chap {chapter_number}: {match_chap.group(2)}"
     elif match_chinese_hua:
         chapter_number = convert_chinese_number_to_arabic(match_chinese_hua.group(1))
-        title = line
     elif match_arabic_hua:
         chapter_number = int(match_arabic_hua.group(1))
-        title = line
     elif match_chinese_maku:
         chapter_number = convert_chinese_number_to_arabic(match_chinese_maku.group(1))
-        title = line
     elif match_arabic_maku:
         chapter_number = int(match_arabic_maku.group(1))
-        title = line
 
     # Kiểm tra số chương có hợp lệ không
-    if chapter_number and is_valid_chapter_number(chapter_number, previous_chapter_number, max_chapter):
-        return chapter_number, title
+    if chapter_number is not None and is_valid_chapter_number(chapter_number, previous_chapter_number, max_chapter):
+        return chapter_number, title # Trả về cả dòng đã được làm sạch
     return None, None
 
 def split_content(file_path, max_chapter):
@@ -286,6 +288,8 @@ def split_content(file_path, max_chapter):
     
     # Biến để theo dõi số chương lớn nhất cho mỗi quyển
     max_chapter_by_volume = {}
+    interlude_counter_by_volume = {}
+    final_chapter_counter_by_volume = {}
     
     i = 0
     while i < len(lines):
@@ -386,27 +390,30 @@ def split_content(file_path, max_chapter):
                     current_section_id = "Chapter_0"
                 current_chapter_for_segment = 0
             elif special_id == "final_chapter":
-                # Lấy số chương lớn nhất trong quyển hiện tại
+                # Xử lý nhiều final_chapter bằng cách sử dụng bộ đếm
                 volume_key = current_volume_number or 0
                 max_chapter_in_volume = max_chapter_by_volume.get(volume_key, 0)
+                
+                # Lấy và cập nhật bộ đếm final_chapter cho quyển hiện tại
+                final_chapter_count = final_chapter_counter_by_volume.get(volume_key, 0)
+                final_chapter_num = max_chapter_in_volume + 1 + final_chapter_count
+                final_chapter_counter_by_volume[volume_key] = final_chapter_count + 1
                 
                 # Đặt ID có cả volume và final_chapter
                 if current_volume_number:
-                    current_section_id = f"Volume_{current_volume_number}_Chapter_{max_chapter_in_volume + 1}"
+                    current_section_id = f"Volume_{current_volume_number}_Chapter_{final_chapter_num}"
                 else:
-                    current_section_id = f"Chapter_{max_chapter_in_volume + 1}"
-                current_chapter_for_segment = max_chapter_in_volume + 1
+                    current_section_id = f"Chapter_{final_chapter_num}"
+                current_chapter_for_segment = final_chapter_num
                 has_final_chapter = True
             elif special_id == "epilogue":
-                # Lấy số chương lớn nhất trong quyển hiện tại
+                # Lấy số chương lớn nhất và số final_chapter đã thấy
                 volume_key = current_volume_number or 0
                 max_chapter_in_volume = max_chapter_by_volume.get(volume_key, 0)
+                final_chapter_count = final_chapter_counter_by_volume.get(volume_key, 0)
                 
-                # Đặt ID có cả volume và epilogue, đặt epilogue sau final_chapter
-                if has_final_chapter:
-                    epilogue_chapter_num = max_chapter_in_volume + 2
-                else:
-                    epilogue_chapter_num = max_chapter_in_volume + 1
+                # Đặt ID cho epilogue, đảm bảo nó nằm sau tất cả các final_chapter
+                epilogue_chapter_num = max_chapter_in_volume + 1 + final_chapter_count
                     
                 if current_volume_number:
                     current_section_id = f"Volume_{current_volume_number}_Chapter_{epilogue_chapter_num}"
@@ -414,11 +421,14 @@ def split_content(file_path, max_chapter):
                     current_section_id = f"Chapter_{epilogue_chapter_num}"
                 current_chapter_for_segment = epilogue_chapter_num
             elif special_id == "interlude":
-                # Xử lý interlude, coi nó như một chương đặc biệt
+                # Xử lý interlude bằng cách gán một số chương lớn (ví dụ: > 900) để tránh xung đột
                 volume_key = current_volume_number or 0
-                max_chapter_in_volume = max_chapter_by_volume.get(volume_key, 0)
-                # Đặt nó sau chương cuối cùng đã thấy
-                interlude_chapter_num = max_chapter_in_volume + 1
+                
+                # Lấy và cập nhật bộ đếm interlude cho quyển hiện tại
+                interlude_count = interlude_counter_by_volume.get(volume_key, 0)
+                interlude_chapter_num = 901 + interlude_count
+                interlude_counter_by_volume[volume_key] = interlude_count + 1
+
                 if current_volume_number:
                     current_section_id = f"Volume_{current_volume_number}_Chapter_{interlude_chapter_num}"
                 else:
@@ -446,6 +456,7 @@ def split_content(file_path, max_chapter):
             seen_chapters = set()
             previous_chapter_number = None
             has_final_chapter = False  # Reset biến theo dõi chương kết khi bắt đầu quyển mới
+            current_chapter_for_segment = 0 # SỬA: Reset số chương cho quyển mới
             
             current_section_id = f"Volume_{volume_number}"
             current_volume_number = volume_number
@@ -517,20 +528,62 @@ def split_content(file_path, max_chapter):
 
     return sections
 
-def split_and_output(file_path, max_chars, max_chapter, output_file, mode, output_format):
-    """Tách file thành các chương/phần và xuất ra file."""
+def output_for_analysis(sections, output_dir, max_chars):
+    """Xuất các chunk văn bản thô ra các file riêng biệt để phân tích."""
+    # Đảm bảo thư mục tồn tại
+    os.makedirs(output_dir, exist_ok=True)
+    
+    global_chunk_counter = 1
+    for section_id, section_lines, chapter_title, _ in sections:
+        # Bỏ qua các section không có ID hoặc chỉ là volume title (không có nội dung thực)
+        if not section_id or not chapter_title or (section_id.startswith("Volume_") and "Chapter_" not in section_id):
+            continue
+
+        # Nối các dòng nội dung lại, bỏ qua dòng tiêu đề đầu tiên
+        content = "\n".join(section_lines[1:])
+        
+        if not content.strip():
+            continue
+
+        start = 0
+        while start < len(content):
+            end = start + max_chars
+            chunk_content = content[start:end]
+            
+            # Tạo file riêng cho mỗi chunk
+            chunk_filename = f"chunk_{global_chunk_counter:04d}.txt"
+            chunk_filepath = os.path.join(output_dir, chunk_filename)
+            
+            with open(chunk_filepath, 'w', encoding='utf-8') as out_file:
+                # Ghi header vào trong file để tiện debug
+                out_file.write(f"### CHUNK {global_chunk_counter} FROM: {section_id} ({chapter_title}) ###\n\n")
+                out_file.write(chunk_content)
+            
+            start = end
+            global_chunk_counter += 1
+    
+    print(f"✅ Đã tạo {global_chunk_counter - 1} file chunk trong thư mục: {output_dir}")
+
+def split_and_output(file_path, max_chars, max_chapter, output_path, mode, output_format):
+    """Tách file thành các chương/phần và xuất ra file/thư mục."""
     sections = split_content(file_path, max_chapter)
 
-    if output_format == "txt":
-        if mode == "3":  # Chế độ tách theo đoạn được đánh dấu sẵn và đánh số segment liên tục
-            output_to_txt_with_continuous_segments(sections, output_file)
+    if mode == "4":  # Chế độ mới để phân tích
+        # output_path ở đây là một đường dẫn thư mục
+        output_for_analysis(sections, output_path, max_chars)
+    elif output_format == "txt":
+        # output_path ở đây là một đường dẫn file
+        if mode == "3":
+            output_to_txt_with_continuous_segments(sections, output_path)
         else:
-            output_to_txt(sections, output_file, mode, max_chars)
+            output_to_txt(sections, output_path, mode, max_chars)
     else:  # YAML format
         if mode == "3":  # Chế độ tách theo đoạn được đánh dấu sẵn và đánh số segment liên tục
-            output_to_yaml_with_continuous_segments(sections, output_file)
+            output_to_yaml_with_continuous_segments(sections, output_path)
         else:
-            output_to_yaml(sections, output_file, mode, max_chars)
+            output_to_yaml(sections, output_path, mode, max_chars)
+
+    print(f"\nHoàn thành! Kết quả đã được lưu tại: {os.path.abspath(output_path)}")
 
 def output_to_txt_with_continuous_segments(sections, output_file):
     """Xuất dữ liệu ra file TXT với segment đánh số liên tục."""
@@ -834,54 +887,75 @@ def main():
     # Nhập thông tin đầu vào
     input_file = input("Nhập file cần tách [input.txt]: ").strip() or "input.txt"
     
-    print("\nChọn định dạng đầu ra:")
-    print("1 - TXT")
-    print("2 - YAML")
-    format_choice = input("Nhập lựa chọn (1 hoặc 2): ").strip() or "1"
-    output_format = "txt" if format_choice == "1" else "yaml"
-    
-    user_output = input("Nhập tên file đầu ra (để trống sẽ tự tạo): ").strip()
-    
-    # Hỏi đường dẫn thư mục đầu ra
-    output_dir = input("Nhập đường dẫn thư mục lưu file (mặc định là thư mục hiện tại): ").strip() or "."
-    output_file = get_output_filename(input_file, user_output, output_format, output_dir)
+    print("\nChọn chế độ tách:")
+    print("1 - Tách theo part/segment dựa trên số ký tự (để dịch)")
+    print("2 - Tách theo chương/phần (để dịch)")
+    print("3 - Tách theo đoạn được đánh dấu sẵn và đánh số segment liên tục (để dịch)")
+    print("4 - Tách file thô để phân tích ngữ cảnh")
+    mode = input("Nhập lựa chọn (1, 2, 3 hoặc 4) [1]: ").strip() or "1"
+
+    output_path = ""
+    output_format = ""
+
+    if mode == "4":
+        output_format = "txt"
+        default_output_dir = "test/results/context_analysis/your_project_name_chunks"
+        # Chỉ hỏi đường dẫn thư mục đích và dùng trực tiếp
+        output_path = input(f"Nhập đường dẫn thư mục để lưu các file chunk (mặc định: {default_output_dir}): ").strip() or default_output_dir
+    else:
+        print("\nChọn định dạng đầu ra:")
+        print("1 - TXT")
+        print("2 - YAML")
+        format_choice = input("Nhập lựa chọn (1 hoặc 2) [2]: ").strip() or "2"
+        output_format = "txt" if format_choice == "1" else "yaml"
+        
+        user_output = input("Nhập tên file đầu ra (để trống sẽ tự tạo): ").strip()
+        
+        default_output_dir = "test/data/API_content"
+        output_dir = input(f"Nhập đường dẫn thư mục lưu file (mặc định là '{default_output_dir}'): ").strip() or default_output_dir
+        
+        output_path = get_output_filename(input_file, user_output, output_format, output_dir)
     
     max_chapter = int(input("Nhập số chương tối đa [1000]: ").strip() or 1000)
-
-    print("\nChọn chế độ tách:")
-    print("1 - Tách theo part/segment dựa trên số ký tự")
-    print("2 - Tách theo chương/phần")
-    print("3 - Tách theo đoạn được đánh dấu sẵn và đánh số segment liên tục")
-    mode = input("Nhập lựa chọn (1, 2 hoặc 3) [1]: ").strip() or "1"
 
     max_chars = None
     if mode == "1":
         max_chars = int(input(f"Nhập số ký tự tối đa cho mỗi {'segment' if output_format == 'yaml' else 'part'} [2000]: ").strip() or 2000)
+    elif mode == "4":
+        max_chars = int(input(f"Nhập số ký tự tối đa cho mỗi chunk phân tích [5000]: ").strip() or 5000)
 
     # Xác nhận
     print(f"\nXác nhận:")
     print(f"- Input: {input_file}")
-    print(f"- Output: {output_file}")
-    print(f"- Thư mục đầu ra: {output_dir}")
-    print(f"- Định dạng: {output_format.upper()}")
+    
+    if mode == "4":
+        print(f"- Thư mục chunks đầu ra: {output_path}")
+    else:
+        print(f"- File đầu ra: {output_path}")
+        print(f"- Thư mục lưu trữ: {os.path.dirname(output_path)}")
+    
+    if mode != "4":
+        print(f"- Định dạng: {output_format.upper()}")
+        
     if mode == "1":
         print(f"- Chế độ: Tách theo part/segment dựa trên số ký tự")
         print(f"- Số ký tự tối đa/{'segment' if output_format == 'yaml' else 'part'}: {max_chars}")
     elif mode == "2":
         print(f"- Chế độ: Tách theo chương/phần")
-    else:
+    elif mode == "3":
         print(f"- Chế độ: Tách theo đoạn được đánh dấu sẵn và đánh số segment liên tục")
+    else: # mode == 4
+        print(f"- Chế độ: Tách file thô để phân tích ngữ cảnh")
+        print(f"- Số ký tự tối đa/chunk: {max_chars}")
     
-    confirm = input("\nTiếp tục? (y/n): ").strip().lower() or "y"
+    confirm = input("\nTiếp tục? (y/n) [y]: ").strip().lower() or "y"
 
     if confirm != 'y':
         print("Hủy thao tác!")
         return
 
     # Thực hiện tách file
-    split_and_output(input_file, max_chars, max_chapter, output_file, mode, output_format)
-
-    print(f"\nHoàn thành! File đã tách lưu tại: {os.path.abspath(output_file)}")
+    split_and_output(input_file, max_chars, max_chapter, output_path, mode, output_format)
 
 if __name__ == "__main__":
     main() 
