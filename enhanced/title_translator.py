@@ -124,11 +124,11 @@ def title_worker(q, result_dict, client, system_prompt, model, temperature, log_
                     messages=[
                         {"role": "system", "content": system_prompt},
                         # Yêu cầu dịch rõ ràng cho tiêu đề
-                        {"role": "user", "content": f"Dịch tiêu đề sau từ tiếng Trung sang tiếng Việt, giữ cho ngắn gọn và phù hợp:\n\n{original_title}"}
+                        {"role": "user", "content": f"{original_title}"}
                     ],
                     model=model,
                     temperature=temperature,
-                    max_tokens=5000 # Tiêu đề thường ngắn
+                    max_tokens=500 # Tiêu đề thường ngắn
                 )
                 
                 # Kiểm tra xem API có trả về nội dung không
@@ -229,7 +229,7 @@ def main():
 
     # 3. Chuẩn bị client và prompt
     client = openai.OpenAI(api_key=api_config["api_key"], base_url=api_config["base_url"])
-    system_prompt = "You are an expert translator specializing in Chinese to Vietnamese. Translate the given title accurately."
+    system_prompt = "Dịch tiêu đề sau. Không cần giải thích. Kết quả trả về chỉ cần 1 dòng tiêu đề. Kết quả trả về không được phép quá 40 từ."
     
     # 4. Tải dữ liệu YAML
     try:

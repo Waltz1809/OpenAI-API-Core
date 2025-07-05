@@ -94,7 +94,7 @@ def retry_worker(q, result_dict, failed_segments_data, client, system_prompt, mo
                     response = client.chat.completions.create(
                         messages=[
                             {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": f"Dịch từ tiếng Trung sang tiếng Việt toàn bộ đoạn văn sau:\n\n{original_segment['content']}"}
+                            {"role": "user", "content": f"Dịch đoạn văn sau từ tiếng Trung sang tiếng Việt:\n\n{original_segment['content']}"}
                         ],
                         model=model,
                         max_tokens=max_tokens,

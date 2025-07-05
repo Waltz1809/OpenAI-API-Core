@@ -168,7 +168,7 @@ def worker(q, result_dict, client, system_prompt, model, temperature, max_tokens
                 response = client.chat.completions.create(
                     messages=[
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": f"Dịch từ tiếng Trung sang tiếng Việt toàn bộ đoạn văn sau:\n\n{segment['content']}"}
+                        {"role": "user", "content": f"Dịch đoạn văn sau từ tiếng Trung sang tiếng Việt:\n\n{segment['content']}"}
                     ],
                     model=model,
                     max_tokens=max_tokens,
@@ -260,7 +260,7 @@ def translation_workflow(master_config):
 
     system_prompt_file = paths.get('prompt_file')
     if not system_prompt_file or not os.path.exists(system_prompt_file):
-        print(f"❌ Lỗi: File prompt '{system_prompt_file}' không hợp lệ hoặc không tồn tại.")
+        print(f"❌ Lỗi: File prompt hệ thống '{system_prompt_file}' không hợp lệ hoặc không tồn tại.")
         return
 
     # Mặc định dịch toàn bộ file

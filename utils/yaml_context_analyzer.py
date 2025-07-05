@@ -3,18 +3,17 @@
 YAML Context Analyzer - Tiện ích phân tích ngữ cảnh từ file YAML
 Đọc file YAML, gửi từng segment đến API để tạo tóm tắt ngữ cảnh,
 sau đó ghi kết quả vào một file YAML mới.
-Đây là một tiện ích độc lập.
+Đây là một tiện ích độc lập, sử dụng Google Gemini Native SDK.
 """
 
 import os
 import sys
 import yaml
 import json
-import openai
 import threading
 import queue
-from datetime import datetime
-import time
+import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 # Thêm đường dẫn để import CustomDumper
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -64,7 +63,7 @@ def load_prompt(file_path):
 
 # --- Logic Phân Tích ---
 
-def analysis_worker(q, result_dict, client, system_prompt, model, temperature, max_tokens, lock, total_segments):
+def analysis_worker(q, result_dict, model, system_prompt, lock, total_segments):
     """Worker cho thread phân tích segment và trả về tóm tắt text."""
     while not q.empty():
         try:
@@ -80,25 +79,19 @@ def analysis_worker(q, result_dict, client, system_prompt, model, temperature, m
             if not content.strip():
                 with lock:
                     print(f"Cảnh báo: Bỏ qua segment {segment_id} vì không có nội dung.")
-                # Vẫn tạo segment rỗng để giữ đúng thứ tự
                 result_dict[index] = {'id': segment_id, 'title': original_title, 'content': ''}
                 q.task_done()
                 continue
 
             try:
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": content}
-                    ],
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                )
+                # Tạo prompt hoàn chỉnh cho Gemini
+                full_prompt = f"{system_prompt}\n\nDưới đây là nội dung cần tóm tắt:\n\n---\n\n{content}"
+                
+                response = model.generate_content(full_prompt)
                 
                 # Kiểm tra API có trả về nội dung không
-                if response.choices and response.choices[0].message and response.choices[0].message.content is not None:
-                    summary_text = response.choices[0].message.content
+                if response.text:
+                    summary_text = response.text
                     new_segment = {
                         'id': segment_id,
                         'title': original_title,
@@ -107,9 +100,11 @@ def analysis_worker(q, result_dict, client, system_prompt, model, temperature, m
                     result_dict[index] = new_segment
                 else:
                     # Xử lý trường hợp không có nội dung (bị filter, etc.)
-                    finish_reason = response.choices[0].finish_reason if response.choices else 'unknown'
+                    block_reason = "Không rõ"
+                    if response.prompt_feedback:
+                        block_reason = response.prompt_feedback.block_reason.name
                     with lock:
-                        print(f"⚠️ Cảnh báo: API không trả về nội dung cho {segment_id} (lý do: {finish_reason}). Giữ lại nội dung gốc.")
+                        print(f"⚠️ Cảnh báo: API không trả về nội dung cho {segment_id} (lý do: {block_reason}). Giữ lại nội dung gốc.")
                     result_dict[index] = segment # Giữ lại segment gốc
 
             except Exception as e:
@@ -123,7 +118,7 @@ def analysis_worker(q, result_dict, client, system_prompt, model, temperature, m
         except queue.Empty:
             break
 
-def analyze_and_summarize_threaded(segments, client, system_prompt, config):
+def analyze_and_summarize_threaded(segments, model, system_prompt, config):
     """Xử lý tóm tắt các segment bằng threading."""
     q = queue.Queue()
     # Dùng dict để đảm bảo thứ tự của các segment được giữ nguyên
@@ -144,8 +139,8 @@ def analyze_and_summarize_threaded(segments, client, system_prompt, config):
         t = threading.Thread(
             target=analysis_worker,
             args=(
-                q, result_dict, client, system_prompt,
-                api_config["model"], api_config["temperature"], api_config["max_tokens"], lock, total_segments
+                q, result_dict, model, system_prompt,
+                lock, total_segments
             )
         )
         t.daemon = True
@@ -209,8 +204,8 @@ def main():
         sys.exit(1)
 
     # 3. Kiểm tra API key
-    if "YOUR_OPENAI_API_KEY" in api_config.get("api_key", ""):
-        api_key = input("Vui lòng nhập OpenAI API Key của bạn: ").strip()
+    if "YOUR_GEMINI_API_KEY" in api_config.get("api_key", ""):
+        api_key = input("Vui lòng nhập Gemini API Key của bạn: ").strip()
         if not api_key:
             print("API key là bắt buộc. Dừng chương trình.")
             sys.exit(1)
@@ -220,9 +215,49 @@ def main():
     print(f"Sử dụng system prompt: {prompt_file}")
     
     # 4. Chuẩn bị và thực thi
-    client = openai.OpenAI(api_key=api_config["api_key"], base_url=api_config["base_url"])
-    
-    summarized_segments = analyze_and_summarize_threaded(segments, client, system_prompt, config)
+    try:
+        genai.configure(api_key=api_config["api_key"])
+
+        # Cấu hình an toàn
+        safety_settings = [
+            {"category": HarmCategory.HARM_CATEGORY_HARASSMENT, "threshold": HarmBlockThreshold.BLOCK_NONE},
+            {"category": HarmCategory.HARM_CATEGORY_HATE_SPEECH, "threshold": HarmBlockThreshold.BLOCK_NONE},
+            {"category": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, "threshold": HarmBlockThreshold.BLOCK_NONE},
+            {"category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, "threshold": HarmBlockThreshold.BLOCK_NONE},
+        ]
+        
+        # Cấu hình sinh nội dung
+        gen_config_params = {
+            "temperature": api_config["temperature"],
+            "max_output_tokens": api_config["max_tokens"]
+        }
+        
+        # Thêm thinking_budget nếu có
+        if 'thinking_budget' in api_config and api_config['thinking_budget'] is not None:
+            try:
+                # Sửa lỗi: ThinkingConfig là một class riêng, không nằm trong GenerationConfig
+                gen_config_params['thinking_config'] = genai.types.ThinkingConfig(
+                    thinking_budget=int(api_config['thinking_budget'])
+                )
+                print(f"💡 Đã áp dụng thinking_budget: {api_config['thinking_budget']}")
+            except AttributeError:
+                print(f"⚠️ (Gemini SDK) Lỗi: Phiên bản 'google-generativeai' của bạn có thể quá cũ và không hỗ trợ 'ThinkingConfig'. Bỏ qua thinking_budget.")
+            except Exception as e:
+                print(f"⚠️ (Gemini SDK) Lỗi không xác định khi áp dụng thinking_budget: {e}. Bỏ qua...")
+
+        generation_config = genai.types.GenerationConfig(**gen_config_params)
+
+        model = genai.GenerativeModel(
+            model_name=api_config["model"],
+            safety_settings=safety_settings,
+            generation_config=generation_config
+        )
+        print(f"✅ (Gemini SDK) Đã khởi tạo thành công model: {api_config['model']}")
+    except Exception as e:
+        print(f"❌ (Gemini SDK) Lỗi khởi tạo model: {e}")
+        sys.exit(1)
+
+    summarized_segments = analyze_and_summarize_threaded(segments, model, system_prompt, config)
 
     if not summarized_segments:
         print("\nKhông có kết quả nào được xử lý. Dừng chương trình.")

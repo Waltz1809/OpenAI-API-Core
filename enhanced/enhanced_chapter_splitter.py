@@ -65,9 +65,9 @@ def detect_special_section(line):
     line = remove_bom(line)
     
     # Các pattern nhận diện phần đặc biệt
-    epilogue_match = re.match(r'^(后记|後記)$', line)
-    foreword_match = re.match(r'^(前言|绪言|引言|序言)$', line)
-    final_chapter_match = re.match(r'^终章', line)
+    epilogue_match = re.match(r'^(后记|後記)', line)
+    foreword_match = re.match(r'^(前言|绪言|引言|序言)', line)
+    final_chapter_match = re.match(r'^(终章|終章)', line)
     
     # Các định dạng mới từ người dùng
     prologue_maku_match = re.match(r'^(序幕／.*)$', line)
@@ -78,9 +78,9 @@ def detect_special_section(line):
     if final_maku_match:
         return "final_chapter", final_maku_match.group(1).strip()
         
-    interlude_match = re.match(r'^(里幕|幕间|幕間|特典)$', line)
+    interlude_match = re.match(r'^(里幕|幕间|幕間|特典|短篇|解說|断章)', line)
     if interlude_match:
-        return "interlude", interlude_match.group(1)
+        return "interlude", line.strip()
 
     # Các pattern cho tiếng Anh
     prologue_match_en = re.match(r'^(Prologue)([:\s].*)?$', line, re.IGNORECASE)
@@ -104,9 +104,9 @@ def detect_special_section(line):
         else:
             return "prologue", "序章"
     elif epilogue_match:
-        return "epilogue", epilogue_match.group(1)
+        return "epilogue", line.strip()
     elif foreword_match:
-        return "foreword", foreword_match.group(1)
+        return "foreword", line.strip()
     elif final_chapter_match:
         # Xử lý chương kết (终章)
         # Cố gắng trích xuất nội dung trong dấu ngoặc nếu có
@@ -528,49 +528,70 @@ def split_content(file_path, max_chapter):
 
     return sections
 
-def output_for_analysis(sections, output_dir, max_chars):
-    """Xuất các chunk văn bản thô ra các file riêng biệt để phân tích."""
-    # Đảm bảo thư mục tồn tại
-    os.makedirs(output_dir, exist_ok=True)
+def output_volume_analysis_to_yaml(sections, output_file):
+    """
+    Xuất dữ liệu phân tích, gộp mỗi volume thành một segment duy nhất trong file YAML.
+    """
+    all_segments = []
     
-    global_chunk_counter = 1
-    for section_id, section_lines, chapter_title, _ in sections:
-        # Bỏ qua các section không có ID hoặc chỉ là volume title (không có nội dung thực)
-        if not section_id or not chapter_title or (section_id.startswith("Volume_") and "Chapter_" not in section_id):
-            continue
-
-        # Nối các dòng nội dung lại, bỏ qua dòng tiêu đề đầu tiên
-        content = "\n".join(section_lines[1:])
+    # 1. Group all content blocks by volume number
+    volumes_data = {}  # Key: volume_number, Value: {'title': str, 'content_list': list_of_strings}
+    
+    for section_id, section_lines, _, _ in sections:
+        volume_match = re.search(r'Volume_(\d+)', section_id)
+        volume_number = int(volume_match.group(1)) if volume_match else None
         
-        if not content.strip():
-            continue
+        if volume_number not in volumes_data:
+            # Initialize with a default title. The actual title will be the first section's title.
+            default_title = f'Quyển {volume_number}' if volume_number is not None else 'Nội dung không có quyển'
+            volumes_data[volume_number] = {'title': default_title, 'content_list': []}
+            # Set the title from the first section of the volume
+            volumes_data[volume_number]['title'] = section_lines[0].strip()
 
-        start = 0
-        while start < len(content):
-            end = start + max_chars
-            chunk_content = content[start:end]
-            
-            # Tạo file riêng cho mỗi chunk
-            chunk_filename = f"chunk_{global_chunk_counter:04d}.txt"
-            chunk_filepath = os.path.join(output_dir, chunk_filename)
-            
-            with open(chunk_filepath, 'w', encoding='utf-8') as out_file:
-                # Ghi header vào trong file để tiện debug
-                out_file.write(f"### CHUNK {global_chunk_counter} FROM: {section_id} ({chapter_title}) ###\n\n")
-                out_file.write(chunk_content)
-            
-            start = end
-            global_chunk_counter += 1
+        # Append the full content of the section (title + body) as a single block
+        full_section_content = "\n".join(section_lines)
+        volumes_data[volume_number]['content_list'].append(full_section_content)
+
+    # 2. Process each volume, creating one large segment per volume
+    # Sort volumes, placing None (no volume) first
+    for volume_number in sorted(volumes_data.keys(), key=lambda x: (x is None, x)):
+        volume_info = volumes_data[volume_number]
+        
+        # Concatenate all content blocks for the entire volume
+        full_volume_content = "\n\n".join(volume_info['content_list'])
+        
+        # Determine the segment ID and title
+        vol_id_part = f"Volume_{volume_number}" if volume_number is not None else "NoVolume"
+        segment_id = f"{vol_id_part}_Segment_1" # The ID will always be Segment_1 for each volume
+        segment_title = volume_info['title']
+
+        all_segments.append({
+            "id": segment_id,
+            "title": segment_title,
+            "content": full_volume_content
+        })
+
+    # 3. Write to YAML file
+    yaml.add_representer(str, represent_multiline_string, Dumper=CustomDumper)
     
-    print(f"✅ Đã tạo {global_chunk_counter - 1} file chunk trong thư mục: {output_dir}")
+    with open(output_file, 'w', encoding='utf-8') as yaml_file:
+        yaml.dump(
+            all_segments,
+            yaml_file,
+            allow_unicode=True,
+            sort_keys=False,
+            default_flow_style=False,
+            Dumper=CustomDumper
+        )
+    
+    print(f"\n✅ Hoàn thành! Đã tạo file phân tích, mỗi quyển một segment: {output_file}")
 
 def split_and_output(file_path, max_chars, max_chapter, output_path, mode, output_format):
     """Tách file thành các chương/phần và xuất ra file/thư mục."""
     sections = split_content(file_path, max_chapter)
 
-    if mode == "4":  # Chế độ mới để phân tích
-        # output_path ở đây là một đường dẫn thư mục
-        output_for_analysis(sections, output_path, max_chars)
+    if mode == "4":  # Chế độ mới: Tách theo volume để phân tích (YAML)
+        output_volume_analysis_to_yaml(sections, output_path)
     elif output_format == "txt":
         # output_path ở đây là một đường dẫn file
         if mode == "3":
@@ -891,17 +912,19 @@ def main():
     print("1 - Tách theo part/segment dựa trên số ký tự (để dịch)")
     print("2 - Tách theo chương/phần (để dịch)")
     print("3 - Tách theo đoạn được đánh dấu sẵn và đánh số segment liên tục (để dịch)")
-    print("4 - Tách file thô để phân tích ngữ cảnh")
+    print("4 - Gộp mỗi Volume thành một Segment duy nhất (xuất ra file YAML để phân tích)")
     mode = input("Nhập lựa chọn (1, 2, 3 hoặc 4) [1]: ").strip() or "1"
 
     output_path = ""
     output_format = ""
 
     if mode == "4":
-        output_format = "txt"
-        default_output_dir = "test/results/context_analysis/your_project_name_chunks"
-        # Chỉ hỏi đường dẫn thư mục đích và dùng trực tiếp
-        output_path = input(f"Nhập đường dẫn thư mục để lưu các file chunk (mặc định: {default_output_dir}): ").strip() or default_output_dir
+        output_format = "yaml" # Mode 4 is now YAML
+        base_name = os.path.splitext(os.path.basename(input_file))[0]
+        default_output_dir = "test/results/analysis"
+        output_dir = input(f"Nhập đường dẫn thư mục lưu file (mặc định là '{default_output_dir}'): ").strip() or default_output_dir
+        output_path = os.path.join(output_dir, f"{base_name}_volume.yaml")
+        os.makedirs(output_dir, exist_ok=True) # Đảm bảo thư mục tồn tại
     else:
         print("\nChọn định dạng đầu ra:")
         print("1 - TXT")
@@ -921,20 +944,16 @@ def main():
     max_chars = None
     if mode == "1":
         max_chars = int(input(f"Nhập số ký tự tối đa cho mỗi {'segment' if output_format == 'yaml' else 'part'} [2000]: ").strip() or 2000)
-    elif mode == "4":
-        max_chars = int(input(f"Nhập số ký tự tối đa cho mỗi chunk phân tích [5000]: ").strip() or 5000)
-
+    
     # Xác nhận
     print(f"\nXác nhận:")
     print(f"- Input: {input_file}")
     
     if mode == "4":
-        print(f"- Thư mục chunks đầu ra: {output_path}")
+        print(f"- File YAML phân tích đầu ra: {output_path}")
     else:
         print(f"- File đầu ra: {output_path}")
         print(f"- Thư mục lưu trữ: {os.path.dirname(output_path)}")
-    
-    if mode != "4":
         print(f"- Định dạng: {output_format.upper()}")
         
     if mode == "1":
@@ -945,8 +964,7 @@ def main():
     elif mode == "3":
         print(f"- Chế độ: Tách theo đoạn được đánh dấu sẵn và đánh số segment liên tục")
     else: # mode == 4
-        print(f"- Chế độ: Tách file thô để phân tích ngữ cảnh")
-        print(f"- Số ký tự tối đa/chunk: {max_chars}")
+        print(f"- Chế độ: Gộp mỗi Volume thành một Segment duy nhất để phân tích (YAML)")
     
     confirm = input("\nTiếp tục? (y/n) [y]: ").strip().lower() or "y"
 

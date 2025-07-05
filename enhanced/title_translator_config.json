@@ -1,14 +1,14 @@
 {
-  "source_yaml_file": "test\\results\\output\\magika\\magika_cleaned.yaml",
+  "source_yaml_file": "test/results/output/tanaka/tanaka_cleaned.yaml",
   "api_settings": {
     "api_key": "",
-    "base_url": "",
-    "model": "gemini-2.5-flash-preview-05-20",
+    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+    "model": "gemini-2.0-flash",
     "temperature": 1.0,
     "concurrent_requests": 6,
     "delay": 1
   },
   "paths": {
-    "log_dir": "test\\results\\title\\magika"
+    "log_dir": "test/results/title/tanaka"
   }
 } 

@@ -37,6 +37,22 @@ def create_sample_config():
     }
     return config
 
+def get_output_yaml_from_log(log_path):
+    """Đọc file log để tìm đường dẫn file YAML output trong phần header."""
+    try:
+        with open(log_path, 'r', encoding='utf-8') as f:
+            # Chỉ đọc vài dòng đầu để tìm header
+            for _ in range(20): 
+                line = f.readline()
+                if not line:
+                    break
+                if line.startswith("Output:"):
+                    # Lấy đường dẫn sau "Output: " và xóa khoảng trắng thừa
+                    return line.split(":", 1)[1].strip()
+    except Exception as e:
+        print(f"⚠️  Cảnh báo: Không thể đọc header từ file log: {e}")
+    return None
+
 def retry_workflow(master_config):
     """
     Workflow tự động được điều khiển bởi master_workflow.
@@ -65,12 +81,19 @@ def retry_workflow(master_config):
         print("   Ví dụ: '.../logs/your_file_cleaned_YYYYMMDD_HHMMSS.log'")
         return
 
-    # --- Tự động xác định file cần vá lỗi từ tên file log ---
-    # Ví dụ: ".../log/vol1_cleaned_TIMESTAMP.log" -> "vol1_cleaned.yaml"
-    log_basename_no_ext = os.path.splitext(os.path.basename(log_file_to_analyze))[0]
-    # Xóa timestamp khỏi tên file, ví dụ: "vol1_cleaned_20250608_123456" -> "vol1_cleaned"
-    target_yaml_basename_no_ext = re.sub(r'_\d{8}_\d{6}$', '', log_basename_no_ext)
-    target_yaml_to_patch_path = os.path.join(paths['output_dir'], f"{target_yaml_basename_no_ext}.yaml")
+    # --- Logic mới: Đọc đường dẫn output trực tiếp từ file log ---
+    print(f"📖 Đọc file log '{log_file_to_analyze}' để tìm file YAML đích...")
+    target_yaml_to_patch_path = get_output_yaml_from_log(log_file_to_analyze)
+
+    if not target_yaml_to_patch_path:
+        print(f"❌ Lỗi: Không thể tìm thấy dòng 'Output: <path>' trong file log '{log_file_to_analyze}'.")
+        print("   Hãy đảm bảo file log được tạo bởi một workflow chuẩn và không bị chỉnh sửa.")
+        return
+    
+    # Chuẩn hóa đường dẫn để đảm bảo tương thích trên Windows
+    target_yaml_to_patch_path = os.path.normpath(target_yaml_to_patch_path)
+    print(f"✅ Tìm thấy file đích cần vá lỗi: {target_yaml_to_patch_path}")
+    # --- Kết thúc logic mới ---
 
     # Kiểm tra các file đầu vào
     if not os.path.exists(log_file_to_analyze):

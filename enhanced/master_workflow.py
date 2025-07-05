@@ -20,9 +20,10 @@ sys.path.append(script_dir)
 try:
     from translation_workflow import translation_workflow
     from auto_retry_system import retry_workflow
+    from gemini_native_translator import gemini_native_workflow
 except ImportError as e:
     print(f"Lỗi import: {e}")
-    print("Hãy đảm bảo các file workflow con (translation_workflow.py, auto_retry_system.py) tồn tại.")
+    print("Hãy đảm bảo các file workflow con (translation_workflow.py, auto_retry_system.py, gemini_native_translator.py) tồn tại.")
     sys.exit(1)
 
 
@@ -63,10 +64,19 @@ def run_translation_mode(config):
     print("\n" + "="*60)
     print("🚀 Bắt đầu chế độ: DỊCH THUẬT (TRANSLATE)")
     print(f"   Tác vụ: {config['active_task'].get('task_name', 'Không có tên')}")
-    print("="*60 + "\n")
-    
-    # Gọi workflow dịch thuật và truyền toàn bộ config vào
-    translation_workflow(config)
+
+    # Lựa chọn SDK để sử dụng
+    api_settings = config.get('translate_api_settings', {})
+    if api_settings.get('use_native_gemini_sdk', False):
+        print("   SDK Mode: Google Gemini Native SDK")
+        print("="*60 + "\n")
+        # Gọi workflow của Gemini Native SDK
+        gemini_native_workflow(config)
+    else:
+        print("   SDK Mode: OpenAI-Compatible SDK")
+        print("="*60 + "\n")
+        # Gọi workflow dịch thuật gốc (sử dụng OpenAI SDK)
+        translation_workflow(config)
     
 
 def find_latest_log_file(log_dir):
@@ -113,7 +123,11 @@ def run_retry_mode(config):
         # Cập nhật lại config để truyền đi cho đúng
         config['active_task']['source_log_file_for_retry'] = source_log
 
-    # Kiểm tra các trường bắt buộc cho chế độ này
+    # Chuẩn hóa đường dẫn và kiểm tra sự tồn tại
+    if source_log:
+        source_log = os.path.normpath(source_log)
+        config['active_task']['source_log_file_for_retry'] = source_log # Cập nhật lại config
+
     if not source_log or not os.path.exists(source_log):
         print(f"❌ Lỗi (Chế độ Retry): File log 'source_log_file_for_retry' ('{source_log}') không hợp lệ hoặc không tồn tại.")
         return

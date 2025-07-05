@@ -1,23 +1,25 @@
 {
   "active_task": {
-    "task_name": "Dịch và Dọn dẹp Truyện magika",
-    "workflow_mode": "retry",
-    "source_yaml_file": "test/data/API_content/magika/magika.yaml",
+    "task_name": "Dịch và Dọn dẹp Truyện blackmail",
+    "workflow_mode": "translate",
+    "source_yaml_file": "",
     "source_log_file_for_retry": "LATEST"
   },
   "translate_api_settings": {
     "comment": "Cấu hình cho lần dịch đầu tiên (tương tự config2.json)",
+    "use_native_gemini_sdk": true, 
     "api_key": "",
-    "base_url": "",
+    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
     "model": "gemini-2.5-flash-preview-05-20",
-    "temperature": 1.0,
-    "concurrent_requests": 6,
-    "max_tokens": 50000
+    "temperature": 0.7,
+    "concurrent_requests": 3,
+    "max_tokens": 8000,
+    "thinking_budget": 2000
   },
   "retry_api_settings": {
     "comment": "Cấu hình để retry các segment lỗi (tương tự config.json)",
     "api_key": "",
-    "base_url": "",
+    "base_url": "https://api.sv2.llm.ai.vn/v1",
     "model": "deepseek:deepseek-reasoner",
     "temperature": 1.0,
     "concurrent_requests": 3,
@@ -29,13 +31,13 @@
     "remove_thinking_blocks": true
   },
   "paths": {
-    "output_dir": "test/results/output/magika",
-    "log_dir": "test/results/translation_log/magika",
-    "prompt_file": "test/data/system/magika/system_magika.txt",
-    "intermediate_dir": "test/results/temp"
+    "output_dir": "",
+    "log_dir": "",
+    "prompt_file": "",
+    "intermediate_dir": ""
   },
   "title_translation_settings": {
-    "enabled": true,
-    "title_prompt_file": "test/python/prompts/system_prompt_title.txt"
+    "enabled": false,
+    "title_prompt_file": ""
   }
 } 
