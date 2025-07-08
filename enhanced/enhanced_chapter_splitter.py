@@ -528,213 +528,86 @@ def split_content(file_path, max_chapter):
 
     return sections
 
-def output_volume_analysis_to_yaml(sections, output_file):
-    """
-    Xuất dữ liệu phân tích, gộp mỗi volume thành một segment duy nhất trong file YAML.
-    """
-    all_segments = []
-    
-    # 1. Group all content blocks by volume number
-    volumes_data = {}  # Key: volume_number, Value: {'title': str, 'content_list': list_of_strings}
-    
-    for section_id, section_lines, _, _ in sections:
-        volume_match = re.search(r'Volume_(\d+)', section_id)
-        volume_number = int(volume_match.group(1)) if volume_match else None
-        
-        if volume_number not in volumes_data:
-            # Initialize with a default title. The actual title will be the first section's title.
-            default_title = f'Quyển {volume_number}' if volume_number is not None else 'Nội dung không có quyển'
-            volumes_data[volume_number] = {'title': default_title, 'content_list': []}
-            # Set the title from the first section of the volume
-            volumes_data[volume_number]['title'] = section_lines[0].strip()
 
-        # Append the full content of the section (title + body) as a single block
-        full_section_content = "\n".join(section_lines)
-        volumes_data[volume_number]['content_list'].append(full_section_content)
-
-    # 2. Process each volume, creating one large segment per volume
-    # Sort volumes, placing None (no volume) first
-    for volume_number in sorted(volumes_data.keys(), key=lambda x: (x is None, x)):
-        volume_info = volumes_data[volume_number]
-        
-        # Concatenate all content blocks for the entire volume
-        full_volume_content = "\n\n".join(volume_info['content_list'])
-        
-        # Determine the segment ID and title
-        vol_id_part = f"Volume_{volume_number}" if volume_number is not None else "NoVolume"
-        segment_id = f"{vol_id_part}_Segment_1" # The ID will always be Segment_1 for each volume
-        segment_title = volume_info['title']
-
-        all_segments.append({
-            "id": segment_id,
-            "title": segment_title,
-            "content": full_volume_content
-        })
-
-    # 3. Write to YAML file
-    yaml.add_representer(str, represent_multiline_string, Dumper=CustomDumper)
-    
-    with open(output_file, 'w', encoding='utf-8') as yaml_file:
-        yaml.dump(
-            all_segments,
-            yaml_file,
-            allow_unicode=True,
-            sort_keys=False,
-            default_flow_style=False,
-            Dumper=CustomDumper
-        )
-    
-    print(f"\n✅ Hoàn thành! Đã tạo file phân tích, mỗi quyển một segment: {output_file}")
 
 def split_and_output(file_path, max_chars, max_chapter, output_path, mode, output_format):
     """Tách file thành các chương/phần và xuất ra file/thư mục."""
     sections = split_content(file_path, max_chapter)
 
-    if mode == "4":  # Chế độ mới: Tách theo volume để phân tích (YAML)
-        output_volume_analysis_to_yaml(sections, output_path)
-    elif output_format == "txt":
-        # output_path ở đây là một đường dẫn file
-        if mode == "3":
-            output_to_txt_with_continuous_segments(sections, output_path)
+    if output_format == "txt":
+        if mode == "2":
+            output_to_txt_simple_segments(sections, output_path)
         else:
             output_to_txt(sections, output_path, mode, max_chars)
     else:  # YAML format
-        if mode == "3":  # Chế độ tách theo đoạn được đánh dấu sẵn và đánh số segment liên tục
-            output_to_yaml_with_continuous_segments(sections, output_path)
+        if mode == "2":
+            output_to_yaml_simple_segments(sections, output_path)
         else:
             output_to_yaml(sections, output_path, mode, max_chars)
 
     print(f"\nHoàn thành! Kết quả đã được lưu tại: {os.path.abspath(output_path)}")
 
-def output_to_txt_with_continuous_segments(sections, output_file):
-    """Xuất dữ liệu ra file TXT với segment đánh số liên tục."""
+
+
+
+def output_to_txt_simple_segments(sections, output_file):
+    """Xuất dữ liệu ra file TXT với ID segment đơn giản."""
     with open(output_file, 'w', encoding='utf-8') as out_file:
-        # Biến để theo dõi segment liên tục toàn bộ file
-        global_segment_counter = 1
+        segment_counter = 1
         
-        # Nhóm các section theo chương
-        chapters = {}
         for section_id, section_lines, chapter_title, chapter_number in sections:
-            if chapter_number not in chapters:
-                chapters[chapter_number] = []
-            chapters[chapter_number].append((section_id, section_lines, chapter_title))
-        
-        # Xử lý từng chương
-        for chapter_number in sorted(chapters.keys()):
-            chapter_sections = chapters[chapter_number]
+            # Bỏ qua tiêu đề (line đầu tiên) và lấy nội dung
+            content_lines = section_lines[1:]
             
-            # Xác định ID chương
-            if chapter_number == 0:  # Prologue
-                chapter_id = "Chapter_0"
-            elif chapter_number == -1:  # Epilogue cũ (nên không xuất hiện nữa)
-                # Tìm số chương lớn nhất
-                max_chapter = max([ch for ch in chapters.keys() if isinstance(ch, int) and ch > 0], default=0)
-                chapter_id = f"Chapter_{max_chapter + 1}"
-            else:
-                chapter_id = f"Chapter_{chapter_number}"
-            
-            # Xử lý từng section trong chương
-            for section_id, section_lines, chapter_title in chapter_sections:
-                # Bỏ qua tiêu đề (line đầu tiên)
-                content_lines = section_lines[1:]
-                
-                # Loại bỏ các dòng marker subsection (khi xuất)
-                filtered_content = []
-                for line in content_lines:
-                    # Bỏ qua các dòng subsection marker
-                    if re.match(r'^\d+\.\d+$', line.strip()):
-                        continue
-                    filtered_content.append(line)
-                
-                # Nếu không có nội dung sau khi lọc, bỏ qua segment này
-                if not filtered_content:
+            # Loại bỏ các dòng marker subsection
+            filtered_content = []
+            for line in content_lines:
+                if re.match(r'^\d+\.\d+$', line.strip()):
                     continue
-                
-                # Ghi ra file
-                out_file.write(f"{chapter_id}_Segment_{global_segment_counter}\n")
-                out_file.write(f"{chapter_title}\n")
-                for content_line in filtered_content:
-                    out_file.write(f"{content_line}\n")
-                out_file.write("\n")
-                
-                global_segment_counter += 1
+                filtered_content.append(line)
+            
+            # Nếu không có nội dung sau khi lọc, bỏ qua segment này
+            if not filtered_content:
+                continue
+            
+            # Ghi ra file với ID đơn giản
+            out_file.write(f"Segment_{segment_counter}\n")
+            out_file.write(f"{chapter_title}\n")
+            for content_line in filtered_content:
+                out_file.write(f"{content_line}\n")
+            out_file.write("\n")
+            
+            segment_counter += 1
 
-def output_to_yaml_with_continuous_segments(sections, output_file):
-    """Xuất dữ liệu ra file YAML với segment đánh số liên tục."""
+def output_to_yaml_simple_segments(sections, output_file):
+    """Xuất dữ liệu ra file YAML với ID segment đơn giản."""
     all_segments = []
+    segment_counter = 1
     
-    # Biến để theo dõi segment liên tục toàn bộ file
-    global_segment_counter = 1
-    
-    # Nhóm các section theo volume và chapter
-    volumes = {}
     for section_id, section_lines, chapter_title, chapter_number in sections:
-        # Trích xuất thông tin volume từ section_id nếu có
-        volume_match = re.search(r'Volume_(\d+)', section_id)
-        volume_number = int(volume_match.group(1)) if volume_match else None
+        # Bỏ qua tiêu đề (line đầu tiên) và lấy nội dung
+        content_lines = section_lines[1:]
         
-        if volume_number not in volumes:
-            volumes[volume_number] = {}
+        # Loại bỏ các dòng marker subsection
+        filtered_content = []
+        for line in content_lines:
+            if re.match(r'^\d+\.\d+$', line.strip()):
+                continue
+            filtered_content.append(line)
         
-        if chapter_number not in volumes[volume_number]:
-            volumes[volume_number][chapter_number] = []
-        
-        volumes[volume_number][chapter_number].append((section_id, section_lines, chapter_title))
-    
-    # Xử lý từng volume
-    for volume_number in sorted(volumes.keys()):
-        volume_chapters = volumes[volume_number]
-        
-        # Xử lý từng chương trong volume
-        for chapter_number in sorted(volume_chapters.keys()):
-            chapter_sections = volume_chapters[chapter_number]
+        # Nếu không có nội dung sau khi lọc, bỏ qua segment này
+        if not filtered_content:
+            continue
             
-            # Xác định ID chương
-            if chapter_number == 0:  # Prologue
-                if volume_number is not None:
-                    chapter_id = f"Volume_{volume_number}_Chapter_0"
-                else:
-                    chapter_id = "Chapter_0"
-            elif chapter_number == -1:  # Epilogue cũ (nên không xuất hiện nữa)
-                # Tìm số chương lớn nhất trong volume hiện tại
-                max_chapter = max([ch for ch in volume_chapters.keys() if isinstance(ch, int) and ch > 0], default=0)
-                if volume_number is not None:
-                    chapter_id = f"Volume_{volume_number}_Chapter_{max_chapter + 1}"
-                else:
-                    chapter_id = f"Chapter_{max_chapter + 1}"
-            else:
-                # Tạo ID chương với thông tin volume nếu có
-                if volume_number is not None:
-                    chapter_id = f"Volume_{volume_number}_Chapter_{chapter_number}"
-                else:
-                    chapter_id = f"Chapter_{chapter_number}"
-            
-            # Xử lý từng section trong chương
-            for section_id, section_lines, chapter_title in chapter_sections:
-                # Bỏ qua tiêu đề (line đầu tiên)
-                content_lines = section_lines[1:]
-                
-                # Loại bỏ các dòng marker subsection (khi xuất)
-                filtered_content = []
-                for line in content_lines:
-                    # Bỏ qua các dòng subsection marker
-                    if re.match(r'^\d+\.\d+$', line.strip()):
-                        continue
-                    filtered_content.append(line)
-                
-                # Nếu không có nội dung sau khi lọc, bỏ qua segment này
-                if not filtered_content:
-                    continue
-                    
-                # Nối các dòng nội dung lại
-                content = "\n".join(filtered_content)
+        # Nối các dòng nội dung lại
+        content = "\n".join(filtered_content)
 
-                all_segments.append({
-                    "id": f"{chapter_id}_Segment_{global_segment_counter}",
-                    "title": chapter_title,
-                    "content": content
-                })
-                global_segment_counter += 1
+        all_segments.append({
+            "id": f"Segment_{segment_counter}",
+            "title": chapter_title,
+            "content": content
+        })
+        segment_counter += 1
 
     # Đăng ký custom representer cho multi-line strings
     yaml.add_representer(str, represent_multiline_string, Dumper=CustomDumper)
@@ -753,15 +626,7 @@ def output_to_yaml_with_continuous_segments(sections, output_file):
 def output_to_txt(sections, output_file, mode, max_chars):
     """Xuất dữ liệu ra file TXT."""
     with open(output_file, 'w', encoding='utf-8') as out_file:
-        if mode == "2":  # Chế độ tách theo chương/phần
-            for section_id, section_lines, _, _ in sections:
-                title = section_lines[0]
-                out_file.write(f"{section_id}\n")
-                out_file.write(f"{title}\n")
-                for content_line in section_lines[1:]:
-                    out_file.write(f"{content_line}\n")
-                out_file.write("\n")
-        else:  # Chế độ tách theo part
+        # Chỉ mode 1: Tách theo part dựa trên số ký tự
             global_part_id = 1  # Đếm segment toàn cục
             
             for section_id, section_lines, _, chapter_number in sections:
@@ -821,61 +686,20 @@ def output_to_yaml(sections, output_file, mode, max_chars):
         # Reset bộ đếm segment trong mỗi volume nếu cần
         volume_segment_counter = 1
         
-        # Chế độ tách theo chương/phần
-        if mode == "2":
-            for section_id, section_lines, _, chapter_number in volume_sections:
-                title = section_lines[0]
-                content = "\n".join(section_lines[1:])
-
-                # Đảm bảo ID bao gồm thông tin volume nếu có
-                if volume_number is not None:
-                    if section_id.lower().startswith("chapter_"):
-                        # Trích xuất số chapter từ ID
-                        chapter_match = re.search(r'Chapter_(\d+)', section_id)
-                        if chapter_match:
-                            chapter_num = chapter_match.group(1)
-                            section_id = f"Volume_{volume_number}_Chapter_{chapter_num}"
-                    elif not section_id.startswith(f"Volume_{volume_number}"):
-                        section_id = f"Volume_{volume_number}_{section_id}"
+        # Mode 1: Tách theo segment dựa trên số ký tự
+        for section_id, section_lines, _, chapter_number in volume_sections:
+            # Nếu không có số chương hợp lệ, bỏ qua phần này
+            if chapter_number is None or chapter_number < 0:
+                continue
                 
-                all_segments.append({
-                    "id": section_id,
-                    "title": title,
-                    "content": content
-                })
-        
-        # Chế độ tách theo segment
-        else:
-            for section_id, section_lines, _, chapter_number in volume_sections:
-                # Nếu không có số chương hợp lệ, bỏ qua phần này
-                if chapter_number is None or chapter_number < 0:
-                    continue
-                    
-                title = section_lines[0]
-                content_lines = section_lines[1:]
-                current_segment = []
-                current_length = 0
+            title = section_lines[0]
+            content_lines = section_lines[1:]
+            current_segment = []
+            current_length = 0
 
-                for line in content_lines:
-                    line_length = len(re.sub(r'\s+', '', line))
-                    if current_length + line_length > max_chars and current_segment:
-                        # Tạo ID với thông tin volume nếu có
-                        segment_id = f"Volume_{volume_number}_Chapter_{chapter_number}_Segment_{global_segment_counter}" if volume_number is not None else f"Chapter_{chapter_number}_Segment_{global_segment_counter}"
-                        
-                        all_segments.append({
-                            "id": segment_id,
-                            "title": title,
-                            "content": "\n".join(current_segment)
-                        })
-                        global_segment_counter += 1
-                        volume_segment_counter += 1
-                        current_segment = []
-                        current_length = 0
-
-                    current_segment.append(line)
-                    current_length += line_length
-
-                if current_segment:
+            for line in content_lines:
+                line_length = len(re.sub(r'\s+', '', line))
+                if current_length + line_length > max_chars and current_segment:
                     # Tạo ID với thông tin volume nếu có
                     segment_id = f"Volume_{volume_number}_Chapter_{chapter_number}_Segment_{global_segment_counter}" if volume_number is not None else f"Chapter_{chapter_number}_Segment_{global_segment_counter}"
                     
@@ -886,6 +710,23 @@ def output_to_yaml(sections, output_file, mode, max_chars):
                     })
                     global_segment_counter += 1
                     volume_segment_counter += 1
+                    current_segment = []
+                    current_length = 0
+
+                current_segment.append(line)
+                current_length += line_length
+
+            if current_segment:
+                # Tạo ID với thông tin volume nếu có
+                segment_id = f"Volume_{volume_number}_Chapter_{chapter_number}_Segment_{global_segment_counter}" if volume_number is not None else f"Chapter_{chapter_number}_Segment_{global_segment_counter}"
+                
+                all_segments.append({
+                    "id": segment_id,
+                    "title": title,
+                    "content": "\n".join(current_segment)
+                })
+                global_segment_counter += 1
+                volume_segment_counter += 1
 
     # Đăng ký custom representer cho multi-line strings
     yaml.add_representer(str, represent_multiline_string, Dumper=CustomDumper)
@@ -909,35 +750,22 @@ def main():
     input_file = input("Nhập file cần tách [input.txt]: ").strip() or "input.txt"
     
     print("\nChọn chế độ tách:")
-    print("1 - Tách theo part/segment dựa trên số ký tự (để dịch)")
-    print("2 - Tách theo chương/phần (để dịch)")
-    print("3 - Tách theo đoạn được đánh dấu sẵn và đánh số segment liên tục (để dịch)")
-    print("4 - Gộp mỗi Volume thành một Segment duy nhất (xuất ra file YAML để phân tích)")
-    mode = input("Nhập lựa chọn (1, 2, 3 hoặc 4) [1]: ").strip() or "1"
+    print("1 - Tách theo segment dựa trên số ký tự (ID: Chapter_X_Segment_Y)")
+    print("2 - Tách đơn giản thành các segment (ID: Segment_X)")
+    mode = input("Nhập lựa chọn (1 hoặc 2) [1]: ").strip() or "1"
 
-    output_path = ""
-    output_format = ""
-
-    if mode == "4":
-        output_format = "yaml" # Mode 4 is now YAML
-        base_name = os.path.splitext(os.path.basename(input_file))[0]
-        default_output_dir = "test/results/analysis"
-        output_dir = input(f"Nhập đường dẫn thư mục lưu file (mặc định là '{default_output_dir}'): ").strip() or default_output_dir
-        output_path = os.path.join(output_dir, f"{base_name}_volume.yaml")
-        os.makedirs(output_dir, exist_ok=True) # Đảm bảo thư mục tồn tại
-    else:
-        print("\nChọn định dạng đầu ra:")
-        print("1 - TXT")
-        print("2 - YAML")
-        format_choice = input("Nhập lựa chọn (1 hoặc 2) [2]: ").strip() or "2"
-        output_format = "txt" if format_choice == "1" else "yaml"
-        
-        user_output = input("Nhập tên file đầu ra (để trống sẽ tự tạo): ").strip()
-        
-        default_output_dir = "test/data/API_content"
-        output_dir = input(f"Nhập đường dẫn thư mục lưu file (mặc định là '{default_output_dir}'): ").strip() or default_output_dir
-        
-        output_path = get_output_filename(input_file, user_output, output_format, output_dir)
+    print("\nChọn định dạng đầu ra:")
+    print("1 - TXT")
+    print("2 - YAML")
+    format_choice = input("Nhập lựa chọn (1 hoặc 2) [2]: ").strip() or "2"
+    output_format = "txt" if format_choice == "1" else "yaml"
+    
+    user_output = input("Nhập tên file đầu ra (để trống sẽ tự tạo): ").strip()
+    
+    default_output_dir = "test/data/API_content"
+    output_dir = input(f"Nhập đường dẫn thư mục lưu file (mặc định là '{default_output_dir}'): ").strip() or default_output_dir
+    
+    output_path = get_output_filename(input_file, user_output, output_format, output_dir)
     
     max_chapter = int(input("Nhập số chương tối đa [1000]: ").strip() or 1000)
 
@@ -948,23 +776,17 @@ def main():
     # Xác nhận
     print(f"\nXác nhận:")
     print(f"- Input: {input_file}")
-    
-    if mode == "4":
-        print(f"- File YAML phân tích đầu ra: {output_path}")
-    else:
-        print(f"- File đầu ra: {output_path}")
-        print(f"- Thư mục lưu trữ: {os.path.dirname(output_path)}")
-        print(f"- Định dạng: {output_format.upper()}")
+    print(f"- File đầu ra: {output_path}")
+    print(f"- Thư mục lưu trữ: {os.path.dirname(output_path)}")
+    print(f"- Định dạng: {output_format.upper()}")
         
     if mode == "1":
-        print(f"- Chế độ: Tách theo part/segment dựa trên số ký tự")
+        print(f"- Chế độ: Tách theo segment dựa trên số ký tự")
         print(f"- Số ký tự tối đa/{'segment' if output_format == 'yaml' else 'part'}: {max_chars}")
-    elif mode == "2":
-        print(f"- Chế độ: Tách theo chương/phần")
-    elif mode == "3":
-        print(f"- Chế độ: Tách theo đoạn được đánh dấu sẵn và đánh số segment liên tục")
-    else: # mode == 4
-        print(f"- Chế độ: Gộp mỗi Volume thành một Segment duy nhất để phân tích (YAML)")
+        print(f"- Format ID: Chapter_X_Segment_Y hoặc Volume_X_Chapter_Y_Segment_Z")
+    else: # mode == "2"
+        print(f"- Chế độ: Tách đơn giản thành các segment")
+        print(f"- Format ID: Segment_X (đơn giản)")
     
     confirm = input("\nTiếp tục? (y/n) [y]: ").strip().lower() or "y"
 

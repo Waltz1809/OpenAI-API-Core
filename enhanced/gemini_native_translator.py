@@ -57,11 +57,20 @@ def load_prompt(file_path):
     with open(file_path, 'r', encoding='utf-8') as f:
         return f.read().strip()
 
-def write_log(log_file, segment_id, status, error=None):
+def write_log(log_file, segment_id, status, error=None, token_info=None):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_message = f"[{timestamp}] {segment_id}: {status}"
+    
+    # Thêm thông tin token nếu có
+    if token_info:
+        input_tokens = token_info.get('input_tokens', 'N/A')
+        output_tokens = token_info.get('output_tokens', 'N/A')
+        total_tokens = token_info.get('total_tokens', 'N/A')
+        log_message += f" | Tokens: Input={input_tokens}, Output={output_tokens}, Total={total_tokens}"
+    
     if error:
         log_message += f" - Lỗi: {error}"
+    
     with open(log_file, 'a', encoding='utf-8') as f:
         f.write(log_message + "\n")
     print(log_message)
@@ -97,7 +106,7 @@ def clean_content(content):
 
 # --- Logic dịch thuật với Gemini Native SDK ---
 
-def gemini_worker(q, result_dict, client, model_name, generation_config, system_prompt, log_file, total_segments, lock, delay):
+def gemini_worker(q, result_dict, client, model_name, generation_config, system_prompt, log_file, total_segments, lock, delay, token_stats):
     """Hàm worker cho thread xử lý dịch với Gemini Native SDK."""
     while not q.empty():
         try:
@@ -131,13 +140,37 @@ def gemini_worker(q, result_dict, client, model_name, generation_config, system_
                 if not translated or not translated.strip():
                     raise Exception("Model trả về content trống - có thể do thinking budget quá cao hoặc lỗi API")
                 
+                # Lấy thông tin token usage từ response
+                token_info = None
+                if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                    try:
+                        input_tokens = response.usage_metadata.prompt_token_count
+                        output_tokens = response.usage_metadata.candidates_token_count
+                        total_tokens = response.usage_metadata.total_token_count
+                        
+                        token_info = {
+                            'input_tokens': input_tokens,
+                            'output_tokens': output_tokens,
+                            'total_tokens': total_tokens
+                        }
+                        
+                        # Cập nhật token stats chung (thread-safe)
+                        with lock:
+                            token_stats['total_input'] += input_tokens
+                            token_stats['total_output'] += output_tokens
+                            token_stats['total_overall'] += total_tokens
+                            token_stats['request_count'] += 1
+                    except AttributeError:
+                        # Nếu không có usage_metadata hoặc cấu trúc khác, bỏ qua
+                        pass
+                
                 # Làm sạch và format lại content
                 cleaned_content = clean_content(translated)
                 translated_segment = {'id': segment['id'], 'title': segment['title'], 'content': cleaned_content}
                 
                 with lock:
                     result_dict[idx] = translated_segment
-                    write_log(log_file, segment_id, "THÀNH CÔNG")
+                    write_log(log_file, segment_id, "THÀNH CÔNG", token_info=token_info)
             
             except Exception as e:
                 with lock:
@@ -156,6 +189,14 @@ def translate_with_gemini_threading(segments_to_translate, client, model_name, g
     lock = threading.Lock()
     total_segments = len(segments_to_translate)
     
+    # Khởi tạo token statistics
+    token_stats = {
+        'total_input': 0,
+        'total_output': 0,
+        'total_overall': 0,
+        'request_count': 0
+    }
+    
     for idx, segment in enumerate(segments_to_translate):
         q.put((idx, segment))
         result_dict[idx] = None
@@ -170,7 +211,8 @@ def translate_with_gemini_threading(segments_to_translate, client, model_name, g
             args=(
                 q, result_dict, client, model_name, generation_config, system_prompt, 
                 log_file, total_segments, lock,
-                api_config.get("delay", 1)
+                api_config.get("delay", 1),
+                token_stats
             )
         )
         t.daemon = True
@@ -184,7 +226,8 @@ def translate_with_gemini_threading(segments_to_translate, client, model_name, g
     for idx in sorted(result_dict.keys()):
         if result_dict[idx] is not None:
             results.append(result_dict[idx])
-    return results
+    
+    return results, token_stats
 
 def gemini_native_workflow(master_config):
     """
@@ -226,19 +269,19 @@ def gemini_native_workflow(master_config):
         safety_settings = [
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, 
-                threshold=types.HarmBlockThreshold.BLOCK_NONE
+                threshold=types.HarmBlockThreshold.OFF
             ),
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, 
-                threshold=types.HarmBlockThreshold.BLOCK_NONE
+                threshold=types.HarmBlockThreshold.OFF
             ),
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, 
-                threshold=types.HarmBlockThreshold.BLOCK_NONE
+                threshold=types.HarmBlockThreshold.OFF
             ),
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, 
-                threshold=types.HarmBlockThreshold.BLOCK_NONE
+                threshold=types.HarmBlockThreshold.OFF
             ),
         ]
         
@@ -282,7 +325,7 @@ def gemini_native_workflow(master_config):
 
     print(f"Bắt đầu dịch {total_segments} segment với {api_config['concurrent_requests']} threads...")
 
-    translated_segments = translate_with_gemini_threading(
+    translated_segments, token_stats = translate_with_gemini_threading(
         segments_to_translate, client, api_config['model'], generation_config, system_prompt, master_config, log_file
     )
     
@@ -293,9 +336,31 @@ def gemini_native_workflow(master_config):
     # Lưu kết quả cuối cùng (bỏ qua bước dọn dẹp vì workflow này chỉ dịch)
     save_yaml(translated_segments, final_output_file)
 
+    # Ghi token summary vào log
     with open(log_file, 'a', encoding='utf-8') as f:
+        f.write(f"\n--- TOKEN USAGE SUMMARY ---\n")
+        f.write(f"Tổng số request thành công: {token_stats['request_count']}\n")
+        f.write(f"Tổng Input tokens: {token_stats['total_input']:,}\n")
+        f.write(f"Tổng Output tokens: {token_stats['total_output']:,}\n")
+        f.write(f"Tổng tokens sử dụng: {token_stats['total_overall']:,}\n")
+        if token_stats['request_count'] > 0:
+            avg_input = token_stats['total_input'] / token_stats['request_count']
+            avg_output = token_stats['total_output'] / token_stats['request_count']
+            f.write(f"Trung bình Input tokens/request: {avg_input:.1f}\n")
+            f.write(f"Trung bình Output tokens/request: {avg_output:.1f}\n")
         f.write(f"\n--- KẾT THÚC WORKFLOW {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n")
     
     print("\n🎉 (Gemini SDK) DỊCH THUẬT HOÀN TẤT! 🎉")
     print(f"Kết quả cuối cùng: {final_output_file}")
-    print(f"Log chi tiết: {log_file}") 
+    print(f"Log chi tiết: {log_file}")
+    
+    # Hiển thị token summary
+    print(f"\n📊 TOKEN USAGE SUMMARY:")
+    print(f"├─ Số request thành công: {token_stats['request_count']}")
+    print(f"├─ Tổng Input tokens: {token_stats['total_input']:,}")
+    print(f"├─ Tổng Output tokens: {token_stats['total_output']:,}")
+    print(f"└─ Tổng tokens sử dụng: {token_stats['total_overall']:,}")
+    if token_stats['request_count'] > 0:
+        avg_input = token_stats['total_input'] / token_stats['request_count']
+        avg_output = token_stats['total_output'] / token_stats['request_count']
+        print(f"   Trung bình: {avg_input:.1f} input + {avg_output:.1f} output = {avg_input + avg_output:.1f} tokens/request") 
