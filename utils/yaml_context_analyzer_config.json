@@ -1,17 +1,35 @@
 {
   "api_settings": {
-    "comment": "Cấu hình API cho việc phân tích bằng Google Gemini Native SDK.",
     "api_key": "",
     "model": "gemini-2.0-flash",
-    "temperature": 0.5,
-    "max_tokens": 3000,
-    "thinking_budget": 2000,
-    "concurrent_requests": 5
+    "temperature": 0.7,
+    "max_tokens": 15000,
+    "concurrent_requests": 3,
+    "delay": 1,
+    "api_provider": "gemini",
+    "base_url": "https://api.openai.com/v1",
+    "thinking_budget": 0
   },
   "paths": {
-    "comment": "Đường dẫn tới các file cần thiết.",
-    "source_yaml_file": "",
-    "system_prompt_file": "",
-    "output_dir": ""
+    "source_yaml_file": "test/data/API_content/coffee/coffee_context.yaml",
+    "system_prompt_file": "test/data/system/context_sol.txt",
+    "output_dir": "test/results/analysis/coffee"
+  },
+  "metadata": {
+    "description": "Config cho YAML Context Analyzer",
+    "api_providers": {
+      "gemini": "Google Gemini API (hỗ trợ thinking cho 2.5 series)",
+      "openai": "OpenAI API (GPT models)"
+    },
+    "thinking_budget_info": {
+      "note": "Chỉ áp dụng cho Gemini",
+      "0": "TẮT thinking (tiết kiệm token)",
+      "1024": "Bật thinking với budget cố định",
+      "-1": "Dynamic thinking (model tự quyết định)"
+    },
+    "model_examples": {
+      "gemini": ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
+      "openai": ["gpt-4o", "gpt-4o-mini", "o1-preview", "o1-mini"]
+    }
   }
 } 

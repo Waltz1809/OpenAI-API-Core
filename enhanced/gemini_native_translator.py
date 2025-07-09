@@ -40,6 +40,51 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(script_dir)
 from clean_segment import CustomDumper
 
+# --- Các hàm pricing đơn giản ---
+
+def load_pricing_data():
+    """Load pricing data từ file JSON."""
+    pricing_file = os.path.join(script_dir, 'model_pricing.json')
+    try:
+        with open(pricing_file, 'r', encoding='utf-8') as f:
+            return yaml.safe_load(f)
+    except FileNotFoundError:
+        print(f"⚠️ Không tìm thấy file pricing: {pricing_file}")
+        return None
+    except Exception as e:
+        print(f"⚠️ Lỗi load pricing data: {e}")
+        return None
+
+def calculate_total_cost(token_stats, model_name):
+    """Tính tổng chi phí dựa trên token stats và model pricing."""
+    pricing_data = load_pricing_data()
+    if not pricing_data or 'models' not in pricing_data:
+        return None
+    
+    models = pricing_data['models']
+    if model_name not in models:
+        return None
+    
+    model_pricing = models[model_name]
+    input_tokens = token_stats.get('total_input', 0)
+    output_tokens = token_stats.get('total_output', 0)
+    thinking_tokens = token_stats.get('total_thinking', 0)
+    
+    # Tính chi phí (giá / 1M tokens)
+    input_cost = (input_tokens * model_pricing['input_price']) / 1_000_000
+    output_cost = (output_tokens * model_pricing['output_price']) / 1_000_000
+    thinking_cost = (thinking_tokens * model_pricing['input_price']) / 1_000_000  # Thinking tokens tính như input
+    
+    total_cost = input_cost + output_cost + thinking_cost
+    
+    return {
+        'input_cost': input_cost,
+        'output_cost': output_cost,
+        'thinking_cost': thinking_cost,
+        'total_cost': total_cost,
+        'currency': pricing_data.get('currency', 'USD')
+    }
+
 # --- Các hàm tiện ích chung ---
 
 def load_yaml(file_path):
@@ -65,8 +110,13 @@ def write_log(log_file, segment_id, status, error=None, token_info=None):
     if token_info:
         input_tokens = token_info.get('input_tokens', 'N/A')
         output_tokens = token_info.get('output_tokens', 'N/A')
+        thinking_tokens = token_info.get('thinking_tokens', 'N/A')
         total_tokens = token_info.get('total_tokens', 'N/A')
-        log_message += f" | Tokens: Input={input_tokens}, Output={output_tokens}, Total={total_tokens}"
+        
+        if thinking_tokens != 'N/A' and thinking_tokens > 0:
+            log_message += f" | Tokens: Input={input_tokens}, Output={output_tokens}, Thinking={thinking_tokens}, Total={total_tokens}"
+        else:
+            log_message += f" | Tokens: Input={input_tokens}, Output={output_tokens}, Total={total_tokens}"
     
     if error:
         log_message += f" - Lỗi: {error}"
@@ -74,6 +124,10 @@ def write_log(log_file, segment_id, status, error=None, token_info=None):
     with open(log_file, 'a', encoding='utf-8') as f:
         f.write(log_message + "\n")
     print(log_message)
+
+def supports_thinking_model(model_name):
+    """Kiểm tra xem model có hỗ trợ thinking hay không (chỉ 2.5 series)."""
+    return any(version in model_name.lower() for version in ['2.5', '2-5'])
 
 def clean_content(content):
     """
@@ -148,9 +202,15 @@ def gemini_worker(q, result_dict, client, model_name, generation_config, system_
                         output_tokens = response.usage_metadata.candidates_token_count
                         total_tokens = response.usage_metadata.total_token_count
                         
+                        # Lấy thinking tokens nếu model hỗ trợ (chỉ 2.5 series)
+                        thinking_tokens = 0
+                        if supports_thinking_model(model_name):
+                            thinking_tokens = getattr(response.usage_metadata, 'thoughts_token_count', 0) or 0
+                        
                         token_info = {
                             'input_tokens': input_tokens,
                             'output_tokens': output_tokens,
+                            'thinking_tokens': thinking_tokens,
                             'total_tokens': total_tokens
                         }
                         
@@ -158,6 +218,7 @@ def gemini_worker(q, result_dict, client, model_name, generation_config, system_
                         with lock:
                             token_stats['total_input'] += input_tokens
                             token_stats['total_output'] += output_tokens
+                            token_stats['total_thinking'] += thinking_tokens
                             token_stats['total_overall'] += total_tokens
                             token_stats['request_count'] += 1
                     except AttributeError:
@@ -193,6 +254,7 @@ def translate_with_gemini_threading(segments_to_translate, client, model_name, g
     token_stats = {
         'total_input': 0,
         'total_output': 0,
+        'total_thinking': 0,
         'total_overall': 0,
         'request_count': 0
     }
@@ -291,20 +353,24 @@ def gemini_native_workflow(master_config):
             "max_output_tokens": api_config.get('max_tokens', 4000)
         }
         
-        # Thêm thinking_config - mặc định là 0 (disable thinking) để tiết kiệm token
-        thinking_budget = api_config.get('thinking_budget', 0)  # Mặc định = 0
-        if thinking_budget is not None:
-            try:
-                # Theo documentation mới của Gemini API
-                generation_config_params['thinking_config'] = types.ThinkingConfig(
-                    thinking_budget=int(thinking_budget)
-                )
-                if thinking_budget == 0:
-                    print(f"💡 (Gemini SDK) Đã TẮT thinking (thinking_budget = 0) để tiết kiệm token")
-                else:
-                    print(f"💡 (Gemini SDK) Đã áp dụng thinking_budget: {thinking_budget}")
-            except Exception as e:
-                print(f"⚠️ (Gemini SDK) Lỗi khi áp dụng thinking_budget: {e}. Bỏ qua...")
+        # Kiểm tra xem model có hỗ trợ thinking không (chỉ 2.5 series)
+        if supports_thinking_model(api_config['model']):
+            # Thêm thinking_config - mặc định là 0 (disable thinking) để tiết kiệm token
+            thinking_budget = api_config.get('thinking_budget', 0)  # Mặc định = 0
+            if thinking_budget is not None:
+                try:
+                    # Theo documentation mới của Gemini API
+                    generation_config_params['thinking_config'] = types.ThinkingConfig(
+                        thinking_budget=int(thinking_budget)
+                    )
+                    if thinking_budget == 0:
+                        print(f"💡 (Gemini SDK) Đã TẮT thinking (thinking_budget = 0) để tiết kiệm token")
+                    else:
+                        print(f"💡 (Gemini SDK) Đã áp dụng thinking_budget: {thinking_budget}")
+                except Exception as e:
+                    print(f"⚠️ (Gemini SDK) Lỗi khi áp dụng thinking_budget: {e}. Bỏ qua...")
+        else:
+            print(f"ℹ️ (Gemini SDK) Model {api_config['model']} không hỗ trợ thinking - bỏ qua thinking_config")
 
         generation_config = types.GenerateContentConfig(**generation_config_params, safety_settings=safety_settings)
         
@@ -336,18 +402,39 @@ def gemini_native_workflow(master_config):
     # Lưu kết quả cuối cùng (bỏ qua bước dọn dẹp vì workflow này chỉ dịch)
     save_yaml(translated_segments, final_output_file)
 
-    # Ghi token summary vào log
+    # Tính toán chi phí dự kiến
+    cost_info = calculate_total_cost(token_stats, api_config['model'])
+    
+    # Ghi token summary và cost vào log
+    model_supports_thinking = supports_thinking_model(api_config['model'])
     with open(log_file, 'a', encoding='utf-8') as f:
         f.write(f"\n--- TOKEN USAGE SUMMARY ---\n")
         f.write(f"Tổng số request thành công: {token_stats['request_count']}\n")
         f.write(f"Tổng Input tokens: {token_stats['total_input']:,}\n")
         f.write(f"Tổng Output tokens: {token_stats['total_output']:,}\n")
+        if model_supports_thinking:
+            f.write(f"Tổng Thinking tokens: {token_stats['total_thinking']:,}\n")
         f.write(f"Tổng tokens sử dụng: {token_stats['total_overall']:,}\n")
         if token_stats['request_count'] > 0:
             avg_input = token_stats['total_input'] / token_stats['request_count']
             avg_output = token_stats['total_output'] / token_stats['request_count']
             f.write(f"Trung bình Input tokens/request: {avg_input:.1f}\n")
             f.write(f"Trung bình Output tokens/request: {avg_output:.1f}\n")
+            if model_supports_thinking:
+                avg_thinking = token_stats['total_thinking'] / token_stats['request_count']
+                f.write(f"Trung bình Thinking tokens/request: {avg_thinking:.1f}\n")
+        
+        # Ghi thông tin chi phí
+        f.write(f"\n--- CHI PHÍ DỰ KIẾN ---\n")
+        if cost_info:
+            f.write(f"Chi phí Input tokens: ${cost_info['input_cost']:.6f}\n")
+            f.write(f"Chi phí Output tokens: ${cost_info['output_cost']:.6f}\n")
+            if cost_info['thinking_cost'] > 0:
+                f.write(f"Chi phí Thinking tokens: ${cost_info['thinking_cost']:.6f}\n")
+            f.write(f"TỔNG CHI PHÍ DỰ KIẾN: ${cost_info['total_cost']:.6f} {cost_info['currency']}\n")
+        else:
+            f.write(f"Không tìm thấy thông tin giá cả cho model: {api_config['model']}\n")
+        
         f.write(f"\n--- KẾT THÚC WORKFLOW {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n")
     
     print("\n🎉 (Gemini SDK) DỊCH THUẬT HOÀN TẤT! 🎉")
@@ -359,8 +446,25 @@ def gemini_native_workflow(master_config):
     print(f"├─ Số request thành công: {token_stats['request_count']}")
     print(f"├─ Tổng Input tokens: {token_stats['total_input']:,}")
     print(f"├─ Tổng Output tokens: {token_stats['total_output']:,}")
+    if model_supports_thinking:
+        print(f"├─ Tổng Thinking tokens: {token_stats['total_thinking']:,}")
     print(f"└─ Tổng tokens sử dụng: {token_stats['total_overall']:,}")
     if token_stats['request_count'] > 0:
         avg_input = token_stats['total_input'] / token_stats['request_count']
         avg_output = token_stats['total_output'] / token_stats['request_count']
-        print(f"   Trung bình: {avg_input:.1f} input + {avg_output:.1f} output = {avg_input + avg_output:.1f} tokens/request") 
+        if model_supports_thinking and token_stats['total_thinking'] > 0:
+            avg_thinking = token_stats['total_thinking'] / token_stats['request_count']
+            print(f"   Trung bình: {avg_input:.1f} input + {avg_output:.1f} output + {avg_thinking:.1f} thinking = {avg_input + avg_output + avg_thinking:.1f} tokens/request")
+        else:
+            print(f"   Trung bình: {avg_input:.1f} input + {avg_output:.1f} output = {avg_input + avg_output:.1f} tokens/request")
+    
+    # Hiển thị thông tin chi phí
+    print(f"\n💰 CHI PHÍ DỰ KIẾN:")
+    if cost_info:
+        print(f"├─ Chi phí Input: ${cost_info['input_cost']:.6f}")
+        print(f"├─ Chi phí Output: ${cost_info['output_cost']:.6f}")
+        if cost_info['thinking_cost'] > 0:
+            print(f"├─ Chi phí Thinking: ${cost_info['thinking_cost']:.6f}")
+        print(f"└─ 💵 TỔNG: ${cost_info['total_cost']:.6f} {cost_info['currency']}")
+    else:
+        print(f"└─ ⚠️ Không tìm thấy thông tin giá cả cho model: {api_config['model']}") 
