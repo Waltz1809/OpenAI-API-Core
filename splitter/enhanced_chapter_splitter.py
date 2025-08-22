@@ -212,7 +212,7 @@ def detect_chapter_title(line, max_chapter, previous_chapter_number):
     match_chinese = re.match(r'^第([零一二三四五六七八九十百千]+)章', line)
     match_arabic = re.match(r'^第(\d{1,3})章', line)
     match_vietnamese = re.match(r'^[Cc]hương\s*(\d{1,3})', line, re.IGNORECASE)
-    match_chap = re.match(r'^[Cc]hap\s*(\d{1,3})', line, re.IGNORECASE)
+    match_chap = re.match(r'^[Cc]hapter\s*(\d{1,3})', line, re.IGNORECASE)
     match_chinese_hua = re.match(r'^第([零一二三四五六七八九十百千]+)话', line)
     match_arabic_hua = re.match(r'^第(\d{1,3})话', line)
     match_chinese_maku = re.match(r'^第([零一二三四五六七八九十百千]+)幕', line)
