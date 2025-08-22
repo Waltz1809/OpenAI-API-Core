@@ -1,0 +1,69 @@
+{
+  "active_task": {
+    "task_name": "Dịch văn bản",
+    "source_yaml_file": "data/yaml/input/WebNovel/marriage/marriage_609_1k5.yaml"
+  },
+  
+  "translate_api": {
+    "provider": "openai",
+    "model": "deepseek-reasoner",
+    "temperature": 1.3,
+    "concurrent_requests": 5,
+    "max_tokens": 5000,
+    "thinking_budget": 1000
+  },
+  
+  "retry_api": {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "temperature": 0.7,
+    "concurrent_requests": 3,
+    "max_tokens": 4000,
+    "max_retries": 3
+  },
+  
+  "context_api": {
+    "provider": "openai",
+    "model": "gemini-2.5-flash",
+    "temperature": 0.5,
+    "concurrent_requests": 2,
+    "max_tokens": 1500,
+    "thinking_budget": 0
+  },
+  
+  "paths": {
+    "output_trans": "data/yaml/output/WebNovel/marriage",
+    "log_trans": "data/result/translation_log/WebNovel/marriage",
+    "context_dir": "data/result/context/",
+    "prompt_file": "data/prompt/system/WebNovel/marriage/marriage_st.txt",
+    "title_prompt_file": "data/prompt/system/utils/title_system.txt",
+    "context_prompt_file": "data/prompt/system/utils/context_system.txt"
+  },
+  
+  "title_api": {
+    "provider": "openai",
+    "model": "deepseek-chat",
+    "temperature": 1.3,
+    "concurrent_requests": 2,
+    "max_tokens": 100,
+    "thinking_budget": 0,
+    "delay": 3
+  },
+  
+  "title_translation": {
+    "enabled": true
+  },
+  
+  "chapter_range": {
+    "enabled": true,
+    "start_volume": 1,
+    "end_volume": 999,
+    "start_chapter": 1,
+    "end_chapter": 200
+  },
+  
+  "cleaner": {
+    "enabled": true,
+    "remove_thinking_blocks": false
+  }
+}
