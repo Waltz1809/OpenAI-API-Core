@@ -1,0 +1,71 @@
+{
+  "input_base_dir": "test/source/raw_txt",
+  "output_base_dir": "test/data/API_content",
+  "tracking_file": "auto_splitter_history.json",
+  
+  "run_settings": {
+    "dry_run": false,
+    "auto_process_missing": false,
+    "force_reprocess": false,
+    "show_progress": true,
+    "log_errors": true,
+    "error_log_file": "auto_splitter_errors.log",
+    "_comments": {
+      "dry_run": "true = chỉ preview, false = thực thi",
+      "auto_process_missing": "true = chỉ xử lý files thiếu (🆕), false = xử lý tất cả",
+      "force_reprocess": "true = xử lý lại tất cả files kể cả đã có"
+    }
+  },
+  
+  "content_types": {
+    "LightNovel": {
+      "input_subdir": "LightNovel",
+      "output_subdir": "LightNovel",
+      "segment_chars": 5000,
+      "context_chars": 50000,
+      "segment_suffix": "5k",
+      "description": "Light Novel JP - segments lớn cho LN"
+    },
+    "WebNovel": {
+      "input_subdir": "WebNovel", 
+      "output_subdir": "WebNovel",
+      "segment_chars": 1500,
+      "context_chars": 50000,
+      "segment_suffix": "1k5",
+      "description": ""
+    }
+  },
+  
+  "modes": {
+    "segment_mode": {
+      "enabled": true,
+      "mode": "1",
+      "description": "Tách thành segments cho translation"
+    },
+    "context_mode": {
+      "enabled": true,
+      "suffix": "context",
+      "mode": "1",
+      "description": "Tách theo chương để phân tích context"
+    }
+  },
+  
+  "global_settings": {
+    "max_chapter": 1000,
+    "output_format": "yaml"
+  },
+  
+  "filters": {
+    "include_folders": [],
+    "exclude_folders": ["backup", "temp", ".git"],
+    "file_patterns": ["*.txt"],
+    "min_file_size_bytes": 100,
+    "exclude_files": ["V20MMR2.txt"]
+  },
+  
+  "output_settings": {
+    "create_subfolders": true,
+    "preserve_folder_structure": true,
+    "backup_existing": false
+  }
+} 
