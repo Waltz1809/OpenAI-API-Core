@@ -34,8 +34,10 @@ class RetryWorkflow:
         self.input_file = config['active_task']['source_yaml_file']
         self.base_name = self.processor.get_base_name(self.input_file)
         
-        # Get SDK code from factory
-        self.sdk_code = AIClientFactory.get_sdk_code(config['retry_api'])
+        # Get SDK code from factory - sử dụng method tồn tại
+        provider = config['retry_api'].get('provider', 'openai').lower()
+        sdk_mapping = {'openai': 'oai', 'gemini': 'gmn', 'vertex': 'vtx'}
+        self.sdk_code = sdk_mapping.get(provider, 'oai')
         
         # Logger
         self.logger = Logger(
@@ -117,24 +119,37 @@ class RetryWorkflow:
             raise
     
     def _find_latest_log(self) -> Optional[str]:
-        """Tìm file log translate mới nhất."""
+        """Tìm file log mới nhất (KHÔNG BAO GỒM chính file retry log hiện tại)."""
         log_dir = self.config['paths']['log_trans']
         
         if not os.path.exists(log_dir):
             return None
         
-        # Tìm files log (không phải retry log)
-        log_files = [
+        # Tìm TẤT CẢ files log
+        all_log_files = [
             os.path.join(log_dir, f) 
             for f in os.listdir(log_dir) 
-            if f.endswith('.log') and '_retry' not in f
+            if f.endswith('.log')
+        ]
+        
+        if not all_log_files:
+            return None
+        
+        # Loại bỏ chính file log hiện tại của retry workflow
+        current_retry_log = self.logger.get_log_path()
+        log_files = [
+            f for f in all_log_files 
+            if os.path.abspath(f) != os.path.abspath(current_retry_log)
         ]
         
         if not log_files:
+            print("❌ Chỉ tìm thấy file retry log hiện tại, không có log gốc nào để phân tích!")
             return None
         
-        # Trả về file mới nhất
-        return max(log_files, key=os.path.getmtime)
+        # Trả về file mới nhất (không phải retry log hiện tại)
+        latest_log = max(log_files, key=os.path.getmtime)
+        print(f"🔍 Phát hiện log mới nhất: {os.path.basename(latest_log)}")
+        return latest_log
     
     def _analyze_log(self, log_file: str) -> List[str]:
         """Phân tích log để tìm failed segments."""

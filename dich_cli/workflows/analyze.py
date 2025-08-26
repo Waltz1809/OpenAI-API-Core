@@ -72,10 +72,10 @@ class AnalyzeWorkflow:
             print("\n📖 Đang load file YAML...")
             segments = self.processor.load_yaml(self.input_file)
             
-            # Filter theo chapter range nếu enabled
+            # Filter theo filtering config mới
             original_count = len(segments)
-            segments = self.processor.filter_by_chapter_range(
-                segments, self.config['chapter_range']
+            segments = self.processor.filter_segments(
+                segments, self.config['filtering']
             )
             
             if len(segments) != original_count:

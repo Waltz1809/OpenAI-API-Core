@@ -57,9 +57,24 @@ class TranslateWorkflow:
         
         print(f"🔧 SDK: {self.sdk_code.upper()}")
         print(f"🤖 Content Model: {self.client.get_model_name()}")
+        
+        # Hiển thị multi-key info
+        content_provider = self.config['translate_api']['provider']
+        if AIClientFactory.has_multiple_keys(content_provider):
+            key_status = AIClientFactory.get_key_rotator_status()
+            content_keys = key_status.get(content_provider, {}).get('key_count', 1)
+            print(f"🔑 Content Keys: {content_keys} keys (round-robin)")
+        
         if self.title_client:
             title_sdk = AIClientFactory.get_sdk_code(config['title_api'])
             print(f"🏷️ Title Model: {self.title_client.get_model_name()} ({title_sdk.upper()})")
+            
+            # Hiển thị title multi-key info
+            title_provider = self.config['title_api']['provider']
+            if AIClientFactory.has_multiple_keys(title_provider):
+                key_status = AIClientFactory.get_key_rotator_status()
+                title_keys = key_status.get(title_provider, {}).get('key_count', 1)
+                print(f"🔑 Title Keys: {title_keys} keys (round-robin)")
         print(f"📝 Output: {self.output_file}")
         print(f"📋 Log: {self.logger.get_log_path()}")
     
@@ -78,10 +93,10 @@ class TranslateWorkflow:
             print("\n📖 Đang load file YAML...")
             segments = self.processor.load_yaml(self.input_file)
             
-            # Filter theo chapter range nếu enabled
+            # Filter theo filtering config mới
             original_count = len(segments)
-            segments = self.processor.filter_by_chapter_range(
-                segments, self.config['chapter_range']
+            segments = self.processor.filter_segments(
+                segments, self.config['filtering']
             )
             
             if len(segments) != original_count:
@@ -154,6 +169,11 @@ class TranslateWorkflow:
         for chapter_id, original_title in unique_chapters.items():
             try:
                 print(f"🏷️ Dịch title: {chapter_id}")
+                
+                if self.title_client is None:
+                    print(f"❌ Title client không được khởi tạo")
+                    translated_titles[chapter_id] = original_title
+                    continue
                 
                 content, token_info = self.title_client.generate_content(
                     self.title_prompt,

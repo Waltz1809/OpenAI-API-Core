@@ -10,6 +10,11 @@ from typing import Dict, Union
 from .openai_client import OpenAIClient
 from .gemini_client import GeminiClient
 from .vertex_client import VertexClient
+from .key_rotator import KeyRotator
+
+
+# Global key rotator instance
+_global_key_rotator = None
 
 
 class AIClientFactory:
@@ -18,40 +23,47 @@ class AIClientFactory:
     @staticmethod
     def create_client(api_config: Dict, secret_config: Dict) -> Union[OpenAIClient, GeminiClient, VertexClient]:
         """
-        Tạo client phù hợp dựa trên config.
+        Tạo client phù hợp dựa trên config với multi-key rotation support.
         
         Args:
             api_config: Config cho API (model, temperature, etc.)
-            secret_config: Secret credentials
+            secret_config: Secret credentials (có thể chứa multiple keys)
             
         Returns:
             AI Client instance
         """
+        global _global_key_rotator
+        
+        # Initialize rotator nếu chưa có
+        if _global_key_rotator is None:
+            print("🔄 AI Factory: Initializing KeyRotator...")
+            _global_key_rotator = KeyRotator(secret_config)
+            # Hiển thị thông tin tổng quan
+            status = _global_key_rotator.get_status()
+            print(f"📊 KeyRotator Status: {status}")
+        
         # Lấy provider từ config
         provider = api_config.get('provider', 'openai').lower()
         
         if provider == 'vertex':
-            # Kiểm tra required credentials cho Vertex
-            required_vertex_keys = ['vertex_project_id']
-            missing_keys = [key for key in required_vertex_keys if key not in secret_config]
-            if missing_keys:
-                raise ValueError(f"Vertex AI thiếu credentials: {missing_keys}")
-            
-            return VertexClient(api_config, secret_config)
+            # Vertex vẫn dùng cách cũ (key cố định)
+            key_config = _global_key_rotator.get_next_key(provider)
+            if key_config is None:
+                available_providers = list(_global_key_rotator.get_status().keys())
+                raise ValueError(f"Không tìm thấy key nào cho provider: {provider}. Available: {available_providers}")
+            return VertexClient(api_config, key_config)
             
         elif provider == 'gemini':
-            # Kiểm tra required credentials cho Gemini
-            if 'gemini_api_key' not in secret_config:
-                raise ValueError("Gemini thiếu 'gemini_api_key' trong secret config")
-            
-            return GeminiClient(api_config, secret_config)
+            # Gemini dùng per-request rotation
+            return GeminiClient(api_config, _global_key_rotator)
             
         elif provider == 'openai':
-            # OpenAI
-            if 'openai_api_key' not in secret_config:
-                raise ValueError("OpenAI thiếu 'openai_api_key' trong secret config")
-            
-            return OpenAIClient(api_config, secret_config)
+            # OpenAI vẫn dùng cách cũ (key cố định)
+            key_config = _global_key_rotator.get_next_key(provider)
+            if key_config is None:
+                available_providers = list(_global_key_rotator.get_status().keys())
+                raise ValueError(f"Không tìm thấy key nào cho provider: {provider}. Available: {available_providers}")
+            return OpenAIClient(api_config, key_config)
             
         else:
             raise ValueError(f"Provider không hỗ trợ: {provider}. Chỉ hỗ trợ: openai, gemini, vertex")
@@ -87,6 +99,35 @@ class AIClientFactory:
             'vertex': 'vtx'
         }
         return mapping.get(provider, 'oai')
+    
+    @staticmethod
+    def get_key_rotator_status() -> Dict:
+        """
+        Lấy thông tin về trạng thái của key rotator.
+        
+        Returns:
+            Dict: Status info cho từng provider
+        """
+        global _global_key_rotator
+        if _global_key_rotator is None:
+            return {}
+        return _global_key_rotator.get_status()
+    
+    @staticmethod
+    def has_multiple_keys(provider: str) -> bool:
+        """
+        Check xem provider có nhiều hơn 1 key không.
+        
+        Args:
+            provider: "openai", "gemini", hoặc "vertex"
+            
+        Returns:
+            bool: True nếu có > 1 key
+        """
+        global _global_key_rotator
+        if _global_key_rotator is None:
+            return False
+        return _global_key_rotator.has_multiple_keys(provider)
 
 
 def load_configs() -> tuple[Dict, Dict]:

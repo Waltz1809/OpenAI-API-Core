@@ -114,6 +114,75 @@ class YamlProcessor:
 
         return "\n".join(clean_lines).strip()  # Giữ đúng xuống dòng thực tế, loại bỏ dòng trống cuối
     
+    def parse_segment_info(self, segment_id: str) -> int:
+        """
+        Parse segment number từ segment ID.
+        
+        Returns:
+            int: Segment number (từ Segment_X)
+        """
+        segment_match = self.segment_pattern.search(segment_id)
+        if segment_match:
+            return int(segment_match.group(1))
+        return 0
+    
+    def filter_by_segment_range(self, segments: List[Dict], segment_range: Dict) -> List[Dict]:
+        """
+        Filter segments theo segment range.
+        
+        Args:
+            segments: Danh sách segments
+            segment_range: {"enabled": bool, "start_segment": int, "end_segment": int}
+        
+        Returns:
+            List[Dict]: Segments đã được filter
+        """
+        if not segment_range.get('enabled', False):
+            return segments
+        
+        start_seg = segment_range.get('start_segment', 1)
+        end_seg = segment_range.get('end_segment', 999)
+        
+        filtered = []
+        for segment in segments:
+            segment_num = self.parse_segment_info(segment.get('id', ''))
+            
+            if start_seg <= segment_num <= end_seg:
+                filtered.append(segment)
+        
+        return filtered
+    
+    def filter_segments(self, segments: List[Dict], filtering_config: Dict) -> List[Dict]:
+        """
+        Filter segments theo config mới với mode selection.
+        
+        Args:
+            segments: Danh sách segments
+            filtering_config: {
+                "mode": "chapter" hoặc "segment",
+                "chapter_range": {...},
+                "segment_range": {...}
+            }
+        
+        Returns:
+            List[Dict]: Segments đã được filter
+        """
+        mode = filtering_config.get('mode', 'chapter')
+        
+        if mode == 'segment':
+            return self.filter_by_segment_range(
+                segments, 
+                filtering_config.get('segment_range', {})
+            )
+        elif mode == 'chapter':
+            return self.filter_by_chapter_range(
+                segments, 
+                filtering_config.get('chapter_range', {})
+            )
+        else:
+            # Fallback: không filter
+            return segments
+    
     def parse_chapter_info(self, segment_id: str) -> tuple:
         """
         Parse thông tin volume/chapter từ segment ID.

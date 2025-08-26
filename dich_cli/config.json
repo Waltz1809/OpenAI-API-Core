@@ -1,25 +1,28 @@
 {
   "active_task": {
     "task_name": "Dịch văn bản",
-    "source_yaml_file": "data/yaml/input/WebNovel/marriage/marriage_609_1k5.yaml"
+    "source_yaml_file": ""
   },
   
   "translate_api": {
-    "provider": "openai",
-    "model": "deepseek-reasoner",
+    "provider": "gemini",
+    "model": "gemini-2.5-flash",
     "temperature": 1.3,
     "concurrent_requests": 5,
-    "max_tokens": 5000,
-    "thinking_budget": 1000
+    "max_tokens": 15000,
+    "thinking_budget": 1500,
+    "delay": 10
   },
   
   "retry_api": {
     "provider": "openai",
-    "model": "gpt-4o-mini",
-    "temperature": 0.7,
+    "model": "deepseek-reasoner",
+    "temperature": 1.3,
     "concurrent_requests": 3,
-    "max_tokens": 4000,
-    "max_retries": 3
+    "max_tokens": 15000,
+    "thinking_budget": 1500,
+    "max_retries": 3,
+    "delay": 10
   },
   
   "context_api": {
@@ -32,17 +35,17 @@
   },
   
   "paths": {
-    "output_trans": "data/yaml/output/WebNovel/marriage",
-    "log_trans": "data/result/translation_log/WebNovel/marriage",
-    "context_dir": "data/result/context/",
-    "prompt_file": "data/prompt/system/WebNovel/marriage/marriage_st.txt",
-    "title_prompt_file": "data/prompt/system/utils/title_system.txt",
-    "context_prompt_file": "data/prompt/system/utils/context_system.txt"
+    "output_trans": "",
+    "log_trans": "",
+    "context_dir": "",
+    "prompt_file": "",
+    "title_prompt_file": "",
+    "context_prompt_file": ""
   },
   
   "title_api": {
-    "provider": "openai",
-    "model": "deepseek-chat",
+    "provider": "gemini",
+    "model": "gemini-2.5-flash",
     "temperature": 1.3,
     "concurrent_requests": 2,
     "max_tokens": 100,
@@ -54,12 +57,20 @@
     "enabled": true
   },
   
-  "chapter_range": {
-    "enabled": true,
-    "start_volume": 1,
-    "end_volume": 999,
-    "start_chapter": 1,
-    "end_chapter": 200
+  "filtering": {
+    "mode": "chapter",
+    "chapter_range": {
+      "enabled": true,
+      "start_volume": 1,
+      "end_volume": 999,
+      "start_chapter": 1,
+      "end_chapter": 10
+    },
+    "segment_range": {
+      "enabled": false,
+      "start_segment": 1,
+      "end_segment": 100
+    }
   },
   
   "cleaner": {

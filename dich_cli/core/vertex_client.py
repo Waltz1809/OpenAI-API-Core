@@ -11,22 +11,22 @@ from google.genai import types
 class VertexClient:
     """Client cho Vertex AI qua Google Gemini SDK."""
     
-    def __init__(self, api_config: Dict, secret_config: Dict):
+    def __init__(self, api_config: Dict, key_config: Dict):
         """
         Initialize Vertex AI client.
         
         Args:
             api_config: Config cho API (model, temperature, etc.)
-            secret_config: Secret credentials
+            key_config: Key config từ KeyRotator {"project_id": "...", "location": "..."}
         """
         self.api_config = api_config
-        self.secret_config = secret_config
+        self.key_config = key_config
         
         # Initialize Vertex AI client qua Gemini SDK
         self.client = genai.Client(
             vertexai=True,
-            project=secret_config['vertex_project_id'],
-            location=secret_config.get('vertex_location', 'global'),
+            project=key_config['project_id'],
+            location=key_config.get('location', 'global'),
         )
         
         # Safety settings - TẮT TẤT CẢ
@@ -81,24 +81,22 @@ class VertexClient:
             
             generation_config = types.GenerateContentConfig(
                 **generation_config_params,
-                safety_settings=self.safety_settings
+                safety_settings=self.safety_settings,
+                system_instruction=system_prompt  # Thêm system instruction
             )
             
-            # Combine prompts
-            full_prompt = f"{system_prompt}\n\n{user_prompt}"
-            
-            # Generate content
+            # Generate content với system instruction riêng
             response = self.client.models.generate_content(
                 model=model_name,
-                contents=full_prompt,
+                contents=user_prompt,  # Chỉ user prompt
                 config=generation_config
             )
             
             # Check if blocked
             if not response.candidates:
                 block_reason = "Không rõ"
-                if response.prompt_feedback:
-                    block_reason = response.prompt_feedback.block_reason.name
+                if response.prompt_feedback and response.prompt_feedback.block_reason:
+                    block_reason = getattr(response.prompt_feedback.block_reason, 'name', 'Unknown')
                 raise Exception(f"Prompt bị chặn: {block_reason}")
             
             content = response.text
@@ -109,10 +107,11 @@ class VertexClient:
             token_info = {"input": 0, "output": 0, "thinking": 0}
             if hasattr(response, 'usage_metadata') and response.usage_metadata:
                 try:
-                    token_info["input"] = response.usage_metadata.prompt_token_count
-                    token_info["output"] = response.usage_metadata.candidates_token_count
+                    token_info["input"] = getattr(response.usage_metadata, 'prompt_token_count', 0) or 0
+                    token_info["output"] = getattr(response.usage_metadata, 'candidates_token_count', 0) or 0
                     if self._supports_thinking(model_name):
-                        token_info["thinking"] = getattr(response.usage_metadata, 'thoughts_token_count', 0) or 0
+                        thinking_count = getattr(response.usage_metadata, 'thoughts_token_count', 0)
+                        token_info["thinking"] = thinking_count or 0
                 except AttributeError:
                     pass
             

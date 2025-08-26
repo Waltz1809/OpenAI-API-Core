@@ -11,19 +11,16 @@ from google.genai import types
 class GeminiClient:
     """Client cho Google Gemini native SDK."""
     
-    def __init__(self, api_config: Dict, secret_config: Dict):
+    def __init__(self, api_config: Dict, key_rotator=None):
         """
         Initialize Gemini client.
         
         Args:
             api_config: Config cho API (model, temperature, etc.)
-            secret_config: Secret credentials
+            key_rotator: KeyRotator instance cho multi-key support
         """
         self.api_config = api_config
-        self.secret_config = secret_config
-        
-        # Initialize Gemini client
-        self.client = genai.Client(api_key=secret_config['gemini_api_key'])
+        self.key_rotator = key_rotator
         
         # Safety settings - TẮT TẤT CẢ
         self.safety_settings = [
@@ -47,7 +44,7 @@ class GeminiClient:
     
     def generate_content(self, system_prompt: str, user_prompt: str) -> Tuple[str, Dict]:
         """
-        Generate content từ Gemini API.
+        Generate content từ Gemini API với per-request key rotation.
         
         Args:
             system_prompt: System prompt
@@ -57,6 +54,16 @@ class GeminiClient:
             Tuple[content, token_info]: Nội dung và thông tin token
         """
         try:
+            # Lấy key mới cho request này
+            if self.key_rotator:
+                key_config = self.key_rotator.get_next_key('gemini')
+                if key_config is None:
+                    raise Exception("Không thể lấy Gemini key cho request")
+                client = genai.Client(api_key=key_config['api_key'])
+            else:
+                # Fallback cho compatibility
+                raise Exception("KeyRotator không được cung cấp")
+            
             # Setup generation config
             generation_config_params = {
                 "temperature": self.api_config['temperature'],
@@ -77,24 +84,22 @@ class GeminiClient:
             
             generation_config = types.GenerateContentConfig(
                 **generation_config_params,
-                safety_settings=self.safety_settings
+                safety_settings=self.safety_settings,
+                system_instruction=system_prompt  # Thêm system instruction
             )
             
-            # Combine prompts
-            full_prompt = f"{system_prompt}\n\n{user_prompt}"
-            
-            # Generate content
-            response = self.client.models.generate_content(
+            # Generate content với system instruction riêng
+            response = client.models.generate_content(
                 model=model_name,
-                contents=full_prompt,
+                contents=user_prompt,  # Chỉ user prompt
                 config=generation_config
             )
             
             # Check if blocked
             if not response.candidates:
                 block_reason = "Không rõ"
-                if response.prompt_feedback:
-                    block_reason = response.prompt_feedback.block_reason.name
+                if response.prompt_feedback and response.prompt_feedback.block_reason:
+                    block_reason = getattr(response.prompt_feedback.block_reason, 'name', 'Unknown')
                 raise Exception(f"Prompt bị chặn: {block_reason}")
             
             content = response.text
@@ -105,10 +110,11 @@ class GeminiClient:
             token_info = {"input": 0, "output": 0, "thinking": 0}
             if hasattr(response, 'usage_metadata') and response.usage_metadata:
                 try:
-                    token_info["input"] = response.usage_metadata.prompt_token_count
-                    token_info["output"] = response.usage_metadata.candidates_token_count
+                    token_info["input"] = getattr(response.usage_metadata, 'prompt_token_count', 0) or 0
+                    token_info["output"] = getattr(response.usage_metadata, 'candidates_token_count', 0) or 0
                     if self._supports_thinking(model_name):
-                        token_info["thinking"] = getattr(response.usage_metadata, 'thoughts_token_count', 0) or 0
+                        thinking_count = getattr(response.usage_metadata, 'thoughts_token_count', 0)
+                        token_info["thinking"] = thinking_count or 0
                 except AttributeError:
                     pass
             

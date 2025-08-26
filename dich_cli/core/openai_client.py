@@ -10,21 +10,21 @@ import openai
 class OpenAIClient:
     """Client cho OpenAI và OpenAI-compatible APIs."""
     
-    def __init__(self, api_config: Dict, secret_config: Dict):
+    def __init__(self, api_config: Dict, key_config: Dict):
         """
         Initialize OpenAI client.
         
         Args:
             api_config: Config cho API (model, temperature, etc.)
-            secret_config: Secret credentials
+            key_config: Key config từ KeyRotator {"api_key": "...", "base_url": "..."}
         """
         self.api_config = api_config
-        self.secret_config = secret_config
+        self.key_config = key_config
         
         # Initialize OpenAI client
         self.client = openai.OpenAI(
-            api_key=secret_config['openai_api_key'],
-            base_url=secret_config.get('openai_base_url', 'https://api.openai.com/v1')
+            api_key=key_config['api_key'],
+            base_url=key_config.get('base_url', 'https://api.openai.com/v1')
         )
     
     def generate_content(self, system_prompt: str, user_prompt: str) -> Tuple[str, Dict]:
