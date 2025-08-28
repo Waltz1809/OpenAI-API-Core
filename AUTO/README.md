@@ -1,11 +1,23 @@
-# Auto Upload Tool - Hướng dẫn sử dụng
+# AUTO - Tool Upload Tự Động
 
-Tool này hỗ trợ 2 chế độ làm việc khác nhau tùy thuộc vào cấu trúc dữ liệu của bạn.
+Tool tự động upload nội dung đã dịch lên website docln.sbs. Hỗ trợ 2 chế độ làm việc linh hoạt tùy thuộc vào cấu trúc dữ liệu YAML.
 
-## 🔧 Cấu hình
+## ✨ Tính Năng
 
-### Mode 1: Volume Mode (Chế độ Volume)
-Sử dụng khi YAML có cấu trúc `Volume_X_Chapter_Y_Segment_Z`
+- 🚀 **2 Chế độ linh hoạt**: Volume Mode & Chapter Mode
+- 📚 **Upload song song**: Nhiều volume/chapter cùng lúc
+- 🎯 **Tự động sắp xếp**: Theo thứ tự chapter và segment
+- 📊 **Chapter Range**: Giới hạn số chương upload với `chapter_range`
+- 💾 **Xử lý nội dung lớn**: Sử dụng clipboard cho content dài
+- ⚙️ **Tùy chọn linh hoạt**: Đánh dấu "Chưa hoàn thành"
+- 🔄 **Error handling**: Tạm dừng để debug khi có lỗi
+- ⏱️ **Rate limiting**: Delay giữa requests để tránh bị block
+
+## 🔧 Cấu Hình
+
+### Mode 1: Volume Mode
+**Sử dụng khi**: YAML có cấu trúc `Volume_X_Chapter_Y_Segment_Z`
+**Mục đích**: Upload nhiều volume từ 1 file YAML, mỗi volume lên URL khác nhau
 
 ```json
 {
@@ -39,8 +51,9 @@ Sử dụng khi YAML có cấu trúc `Volume_X_Chapter_Y_Segment_Z`
 }
 ```
 
-### Mode 2: Chapter Mode (Chế độ Chapter)
-Sử dụng khi YAML có cấu trúc `Chapter_X_Segment_Y` và bạn muốn mỗi file YAML đăng lên 1 URL khác nhau
+### Mode 2: Chapter Mode
+**Sử dụng khi**: YAML có cấu trúc `Chapter_X_Segment_Y`
+**Mục đích**: Mỗi file YAML riêng biệt upload lên URL khác nhau
 
 ```json
 {

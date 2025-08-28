@@ -1,76 +1,123 @@
-# Dịch CLI - Chương trình dịch thuật AI
+# Dịch CLI - Chương Trình Dịch Thuật AI
 
-Chương trình dịch thuật sử dụng AI APIs (OpenAI, Gemini, Vertex) với kiến trúc clean và đơn giản.
+Chương trình dịch thuật chính với giao diện CLI, hỗ trợ đa provider AI (OpenAI, Gemini, Vertex AI) với kiến trúc clean và hiệu suất cao.
 
-## Tính năng
+## ✨ Tính Năng Chính
 
-- ✅ **Translate**: Dịch cả content và title trong 1 lần chạy
-- ✅ **Retry**: Tự động dịch lại các segments thất bại  
-- ✅ **Context Analysis**: Phân tích ngữ cảnh văn bản
-- ✅ **Multi-provider**: Hỗ trợ OpenAI, Gemini, Vertex AI (tách riêng clients)
-- ✅ **Smart logging**: Naming convention `ddmmyy_giờ_SDK_tên.log`
-- ✅ **Progress reports**: Báo cáo tiến độ tự động
-- ✅ **Threading**: Xử lý đồng thời để tăng tốc
-- ✅ **Chapter filtering**: Lọc theo volume/chapter range
+- 🎯 **Translate**: Dịch cả content và title trong 1 lần chạy
+- 🔄 **Retry**: Tự động dịch lại các segments thất bại
+- 📊 **Context Analysis**: Phân tích ngữ cảnh văn bản
+- 🤖 **Multi-provider**: Hỗ trợ OpenAI, Gemini, Vertex AI với clients riêng biệt
+- 📝 **Smart Logging**: Naming convention `ddmmyy_HHMM_SDK_filename.log`
+- 📈 **Progress Reports**: Báo cáo tiến độ tự động và chi tiết
+- ⚡ **Threading**: Xử lý đồng thời để tăng tốc độ
+- 🎛️ **Chapter Filtering**: Lọc theo volume/chapter range
+- 🔑 **Multi-Key Support**: Load balancing với nhiều API keys
+- 🧹 **Auto Cleaning**: Tự động xóa thinking blocks
 
-## Cài đặt
+## 🚀 Cài Đặt & Setup
 
-1. **Clone repository**
+### 1. Dependencies
 ```bash
-git clone <repo_url>
-cd dich_cli
-```
-
-2. **Cài đặt dependencies**
-```bash
+# Cài đặt các thư viện cần thiết
 pip install openai google-genai pyyaml
 ```
 
-3. **Setup credentials**
-```bash
-# Copy template từ dich_cli/ lên thư mục gốc và điền API keys
-cp dich_cli/secret_template.json secrets.json
-# Chỉnh sửa secrets.json với API keys của bạn
+### 2. API Credentials
+Tạo file `secrets.json` ở **thư mục gốc project** (không phải trong dich_cli/):
+
+```json
+{
+    "openai_keys": [
+        {
+            "api_key": "sk-your-openai-key",
+            "base_url": "https://api.openai.com/v1"
+        }
+    ],
+    "gemini_keys": [
+        {
+            "api_key": "AIza-your-gemini-key"
+        },
+        {
+            "api_key": "AIza-another-key"
+        }
+    ],
+    "vertex_keys": [
+        {
+            "project_id": "your-vertex-project",
+            "location": "global"
+        }
+    ]
+}
 ```
 
-4. **Cấu hình**
-```bash
-# Chỉnh sửa config.json theo nhu cầu
-# - Đường dẫn file input
-# - Model settings cho từng workflow
-# - Output directories
-```
+> **Lưu ý**: File `secrets.json` đã được git ignore để bảo mật API keys.
 
-## Sử dụng
+### 3. Cấu Hình
+Chỉnh sửa `dich_cli/config.json` theo nhu cầu:
+- Đường dẫn file input YAML
+- Model settings cho từng workflow
+- Output directories
+- Provider selection
 
-### Chạy chương trình
+## 🎮 Sử Dụng
+
+### Chạy Chương Trình
 ```bash
+cd dich_cli
 python main.py
 ```
 
-### Menu chính
+### Menu Chính
 ```
-1. Dịch thuật (Translate) - Dịch content + title
-2. Dịch lại segments lỗi (Retry) - Sửa lỗi tự động  
-3. Phân tích ngữ cảnh (Context) - Tạo context analysis
-0. Thoát
+=== DỊCH THUẬT AI CLI ===
+1. 🎯 Dịch thuật (Translate) - Dịch content + title
+2. 🔄 Dịch lại segments lỗi (Retry) - Sửa lỗi tự động
+3. 📊 Phân tích ngữ cảnh (Context) - Tạo context analysis
+0. ❌ Thoát
+
+Chọn chức năng (0-3):
 ```
 
-### Workflow tiêu biểu
+### 📋 Workflow Tiêu Biểu
 
-1. **Dịch lần đầu**:
-   - Chọn `1` (Translate)
-   - Chương trình dịch cả content và title
-   - Kiểm tra log để xem segments thất bại
+#### 1. Dịch Lần Đầu (Translate)
+```bash
+# Chọn 1 trong menu
+1. Dịch thuật (Translate)
 
-2. **Retry nếu có lỗi**:
-   - Chọn `2` (Retry) 
-   - Chương trình tự động tìm log mới nhất
-   - Retry các segments thất bại và patch vào file gốc
+# Chương trình sẽ:
+✅ Đọc file YAML từ config
+✅ Dịch cả content và title
+✅ Tạo file output với timestamp
+✅ Ghi log chi tiết các segments
+✅ Tạo progress report
+```
 
-3. **Phân tích context**:
-   - Chọn `3` (Context Analysis)
-   - Tạo file phân tích ngữ cảnh riêng
+#### 2. Retry Segments Lỗi
+```bash
+# Chọn 2 trong menu
+2. Dịch lại segments lỗi (Retry)
+
+# Chương trình sẽ:
+✅ Tự động tìm log file mới nhất
+✅ Parse các segments thất bại
+✅ Retry với API settings riêng
+✅ Patch kết quả vào file gốc
+✅ Update progress report
+```
+
+#### 3. Context Analysis
+```bash
+# Chọn 3 trong menu
+3. Phân tích ngữ cảnh (Context)
+
+# Chương trình sẽ:
+✅ Phân tích ngữ cảnh từng chương
+✅ Tạo context summary
+✅ Lưu vào thư mục context/
+✅ Hỗ trợ cho dịch thuật chính xác hơn
+```
 
 ## Cấu trúc file
 
