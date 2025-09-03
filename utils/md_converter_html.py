@@ -69,14 +69,20 @@ def preprocess_wikitext(wikitext: str) -> str:
     """
     Normalize MediaWiki emphasis so Pandoc parses it correctly.
     Ensures ''italic'' and '''bold''' are properly closed per line.
+    Also normalizes File: → Image: for images.
     """
+    wikitext = wikitext.replace("File:", "Image:")  # ✅ normalize
 
     fixed_lines = []
     for line in wikitext.splitlines():
+        # Fix italic (odd number of pairs)
         if line.count("''") % 2 != 0:
             line = line + "''"
+
+        # Fix bold (odd number of triples)
         if line.count("'''") % 2 != 0:
             line = line + "'''"
+
         fixed_lines.append(line)
 
     return "\n".join(fixed_lines)
@@ -119,14 +125,32 @@ def replace_images(wikitext: str) -> str:
 # ---------------- END NEW CODE ----------------
 
 
+def fix_image_syntax(md_text: str) -> str:
+    """
+    Fix Pandoc escaping image tags and expand to full URL.
+    Example:
+      \![...](Image:ABC.jpg) → ![](https://www.baka-tsuki.org/project/images/ABC.jpg)
+    """
+    # Remove unwanted escapes
+    md_text = re.sub(r"\\!\[", "![", md_text)
+    md_text = re.sub(r"!\[[^]]*\}", "![]", md_text)
+
+    # Convert leftover Image: or File: refs into full URLs
+    def repl(match):
+        fname = match.group(1).replace(" ", "_")
+        return f"![]({BASE_IMG_URL}{fname})"
+
+    md_text = re.sub(r"!\[\]\((?:Image|File):([^)\]]+)\)", repl, md_text)
+    return md_text
+
+
 def convert_to_markdown(wikitext: str, md_file: Path):
     try:
-        # NEW: replace image refs before preprocessing
-        wikitext = replace_images(wikitext)
         processed = preprocess_wikitext(wikitext)
         markdown = pypandoc.convert_text(
             processed, "gfm", format="mediawiki", extra_args=["--wrap=none"]
         )
+        markdown = fix_image_syntax(markdown)  # ✅ fix + expand images
         save_file(markdown, md_file)
         print(f"✅ Converted to {md_file}")
     except OSError as e:
