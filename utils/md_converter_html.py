@@ -9,6 +9,9 @@ ROOT_PAGE = "Kyoukai_Senjou_no_Horizon"
 WIKI_DIR = Path("wiki_exports")
 MD_DIR = Path("markdown_exports")
 VISITED = set()
+IMAGE_CACHE = {}
+# token counter
+_IMAGE_TOKEN_COUNTER = 0
 
 
 def fetch_wikitext(title: str) -> str | None:
@@ -69,28 +72,26 @@ def preprocess_wikitext(wikitext: str) -> str:
     """
     Normalize MediaWiki emphasis so Pandoc parses it correctly.
     Ensures ''italic'' and '''bold''' are properly closed per line.
-    Also normalizes File: → Image: for images.
     """
-    wikitext = wikitext.replace("File:", "Image:")  # ✅ normalize
-
     fixed_lines = []
     for line in wikitext.splitlines():
-        # Fix italic (odd number of pairs)
         if line.count("''") % 2 != 0:
             line = line + "''"
-
-        # Fix bold (odd number of triples)
         if line.count("'''") % 2 != 0:
             line = line + "'''"
-
         fixed_lines.append(line)
-
     return "\n".join(fixed_lines)
 
 
-# ---------------- NEW IMAGE CODE ----------------
+# ---------------- IMAGE & GALLERY HANDLING (NEW) ----------------
 def get_image_url(filename: str) -> str | None:
-    """Resolve wiki [[Image:...]] filename to full image URL."""
+    """Resolve wiki [[File:/Image:...]] filename to full image URL (with cache)."""
+    filename = filename.strip()
+    # cache key normalized
+    key = filename.replace(" ", "_")
+    if key in IMAGE_CACHE:
+        return IMAGE_CACHE[key]
+
     params = {
         "action": "query",
         "titles": f"File:{filename}",
@@ -99,58 +100,106 @@ def get_image_url(filename: str) -> str | None:
         "format": "json"
     }
     try:
-        r = requests.get(API, params=params, timeout=15)
+        r = requests.get(API, params=params, timeout=10)
         r.raise_for_status()
         data = r.json()
         pages = data.get("query", {}).get("pages", {})
         for _, page in pages.items():
             if "imageinfo" in page:
-                return page["imageinfo"][0]["url"]
+                url = page["imageinfo"][0]["url"]
+                IMAGE_CACHE[key] = url
+                return url
     except Exception as e:
         print(f"⚠️ Error resolving image {filename}: {e}")
+
+    IMAGE_CACHE[key] = None
     return None
 
 
-def replace_images(wikitext: str) -> str:
-    """Replace [[Image:...]] tags with Markdown ![](url)."""
+def _new_image_token(token_map: dict, url: str, caption: str | None) -> str:
+    """Create a unique token and register it in token_map."""
+    global _IMAGE_TOKEN_COUNTER
+    token = f"@@IMG_{_IMAGE_TOKEN_COUNTER}@@"
+    _IMAGE_TOKEN_COUNTER += 1
+    token_map[token] = (url, caption)
+    return token
 
-    def repl(match):
-        filename = match.group(1)
+
+def replace_images_and_galleries(wikitext: str) -> tuple[str, dict]:
+    """
+    Replace [[File:...]] / [[Image:...]] and <gallery>...</gallery> with unique tokens.
+    Returns (new_wikitext, token_map) where token_map maps token -> (url, caption).
+    """
+    token_map: dict = {}
+
+    # 1) Handle <gallery>...</gallery> blocks
+    gallery_pattern = re.compile(r"<gallery[^>]*>(.*?)</gallery>", re.IGNORECASE | re.DOTALL)
+
+    def _replace_gallery(match):
+        content = match.group(1)
+        lines = content.splitlines()
+        tokens = []
+        for ln in lines:
+            ln = ln.strip()
+            if not ln:
+                continue
+            # parse "File:Name.jpg|caption" or "Image:Name.jpg|caption" or "Name.jpg|caption"
+            m = re.match(r'(?:(?:File|Image):)?\s*([^|]+?)(?:\|(.*))?$', ln, flags=re.IGNORECASE)
+            if not m:
+                continue
+            filename = m.group(1).strip()
+            caption = m.group(2).strip() if m.group(2) else None
+            url = get_image_url(filename)
+            if url:
+                token = _new_image_token(token_map, url, caption)
+                tokens.append(token)
+        # Join tokens with two newlines so each becomes separate block after pandoc
+        return "\n\n".join(tokens)
+
+    wikitext = gallery_pattern.sub(_replace_gallery, wikitext)
+
+    # 2) Handle inline [[File:...|...]] or [[Image:...|...]]
+    inline_pattern = re.compile(r'\[\[(?:File|Image):\s*([^|\]]+?)(?:\|([^\]]*?))?\]\]', re.IGNORECASE)
+
+    def _replace_inline(match):
+        filename = match.group(1).strip()
+        caption = match.group(2).strip() if match.group(2) else None
         url = get_image_url(filename)
         if url:
-            return f"![]({url})"
-        return match.group(0)
+            return _new_image_token(token_map, url, caption)
+        return match.group(0)  # keep original if not found
 
-    return re.sub(r"\[\[Image:(.+?)(?:\|.*?)?\]\]", repl, wikitext)
-# ---------------- END NEW CODE ----------------
+    wikitext = inline_pattern.sub(_replace_inline, wikitext)
 
-
-def fix_image_syntax(md_text: str) -> str:
-    """
-    Fix Pandoc escaping image tags and expand to full URL.
-    Example:
-      \![...](Image:ABC.jpg) → ![](https://www.baka-tsuki.org/project/images/ABC.jpg)
-    """
-    # Remove unwanted escapes
-    md_text = re.sub(r"\\!\[", "![", md_text)
-    md_text = re.sub(r"!\[[^]]*\}", "![]", md_text)
-
-    # Convert leftover Image: or File: refs into full URLs
-    def repl(match):
-        fname = match.group(1).replace(" ", "_")
-        return f"![]({BASE_IMG_URL}{fname})"
-
-    md_text = re.sub(r"!\[\]\((?:Image|File):([^)\]]+)\)", repl, md_text)
-    return md_text
+    return wikitext, token_map
+# ----------------------------------------------------------------
 
 
 def convert_to_markdown(wikitext: str, md_file: Path):
     try:
-        processed = preprocess_wikitext(wikitext)
+        # replace images & galleries with tokens (and collect token map)
+        wikitext_with_tokens, token_map = replace_images_and_galleries(wikitext)
+
+        # preprocess wiki (fix unpaired emphasis)
+        processed = preprocess_wikitext(wikitext_with_tokens)
+
+        # convert to markdown (Pandoc)
         markdown = pypandoc.convert_text(
             processed, "gfm", format="mediawiki", extra_args=["--wrap=none"]
         )
-        markdown = fix_image_syntax(markdown)  # ✅ fix + expand images
+
+        # after conversion, replace tokens with real Markdown image tags
+        # do caption-aware replacement
+        for token, (url, caption) in token_map.items():
+            if caption:
+                # use caption as alt text; strip pipes/newlines from caption
+                safe_caption = caption.replace("\n", " ").strip()
+                img_md = f"![{safe_caption}]({url})"
+            else:
+                img_md = f"![]({url})"
+            # replace all occurrences of token (literal)
+            markdown = markdown.replace(token, img_md)
+
         save_file(markdown, md_file)
         print(f"✅ Converted to {md_file}")
     except OSError as e:
@@ -163,24 +212,30 @@ def extract_links(wikitext: str) -> list[str]:
       - {{:Page|Display}}
       - [[Page|Display]]
     Only return the page title (ignore display text).
+    Exclude File: and Image: references.
     """
     includes = re.findall(r"\{\{:\s*([^|}]+)", wikitext)
     links = re.findall(r"\[\[\s*([^|\]]+)", wikitext)
-    return [x.strip() for x in (includes + links) if not x.startswith("File:")]
+    return [x.strip() for x in (includes + links) if not (x.lower().startswith("file:") or x.lower().startswith("image:"))]
+
+
+def normalize_title(title: str) -> str:
+    """Normalize title for consistent deduplication"""
+    return title.strip().replace(" ", "_")
 
 
 def process_page(title: str):
-    """Fetch, save, convert, and recurse into linked pages"""
-    if title in VISITED:
+    norm_title = normalize_title(title)
+    if norm_title in VISITED:
         return
-    VISITED.add(title)
+    VISITED.add(norm_title)
 
     if not title.startswith("Horizon:") and title != ROOT_PAGE:
         return
     if title.lower().startswith("horizon_talk:") or title.lower().startswith("talk:horizon:"):
         return
 
-    print(f"Fetching {title} ...")
+    print(f"📖 Fetching {title} ...")
     wikitext = fetch_wikitext(title)
     if not wikitext:
         return
@@ -198,7 +253,19 @@ def process_page(title: str):
 
 
 def main():
-    process_page(ROOT_PAGE)
+    # Use root only for discovering volume links (do not save root)
+    root_wikitext = fetch_wikitext(ROOT_PAGE)
+    if not root_wikitext:
+        print("⚠️ Could not fetch root page")
+        return
+
+    volume_links = extract_links(root_wikitext)
+    volumes = [link for link in volume_links if link.lower().startswith("horizon:volume")]
+    print(f"📚 Found {len(volumes)} volumes")
+
+    for vol in volumes:
+        process_page(vol)
+
     print("\n🎉 Done!")
     print(f"Fetched {len(VISITED)} pages in total.")
 
