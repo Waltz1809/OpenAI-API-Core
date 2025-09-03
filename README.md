@@ -1,90 +1,53 @@
-# OpenAI API Core - Công cụ Dịch Thuật Nâng cao
+# OpenAI API Core - Bộ Công Cụ Dịch Thuật AI
 
-Một bộ công cụ dòng lệnh dựa trên Python được thiết kế để tự động hóa quy trình dịch thuật các tệp văn bản lớn (định dạng YAML) bằng cách sử dụng các API tương thích với OpenAI.
+Bộ công cụ Python hoàn chỉnh cho việc dịch thuật và xử lý văn bản sử dụng AI APIs (OpenAI, Gemini, Vertex AI).
 
-## Tính năng nổi bật
+## 📁 Cấu Trúc Project
 
-- **Hai luồng hoạt động chính**: `translate` (dịch mới) và `retry` (thử lại các phần dịch lỗi).
-- **Cấu hình tập trung**: Toàn bộ quy trình được điều khiển bởi một tệp `workflow_config.json` duy nhất.
-- **Tùy chỉnh API linh hoạt**: Cho phép cài đặt các thông số API (model, endpoint, concurrency) riêng biệt cho lần dịch đầu và cho các lần thử lại.
-- **Tự động dọn dẹp**: Tùy chọn xóa bỏ các "khối suy nghĩ" (thinking blocks) không mong muốn từ kết quả của API.
-- **Quản lý đường dẫn**: Dễ dàng tùy chỉnh các đường dẫn cho tệp đầu vào, đầu ra, log và prompt.
-- **Phát hiện log tự động**: Chế độ `retry` có thể tự động tìm và sử dụng tệp log mới nhất để dịch lại các phần bị lỗi.
+| Chương trình | Mô tả | README |
+|-------------|-------|---------|
+| **dich_cli** | 🎯 Chương trình dịch thuật chính (CLI) | [📖 README](dich_cli/README.md) |
+| **AUTO** | 🚀 Tool tự động upload lên website | [📖 README](AUTO/README.md) |
+| **splitter** | ✂️ Công cụ tách văn bản thành segments | [📖 README](splitter/README.md) |
+| **utils** | 🛠️ Các tiện ích hỗ trợ | [📖 README](utils/README.md) |
 
-## Hướng dẫn sử dụng
+## 🚀 Quick Start
 
-### 1. Cài đặt
+### 1. Cài đặt dependencies
+```bash
+pip install openai google-genai pyyaml playwright cn2an
+playwright install  # Cho AUTO tool
+```
 
-Clone Repo
-Install OpenAI lib
-Install cn2an
-Install PyYaml
-
-### 2. Chuẩn bị tệp tin
-
-- **Tệp cần dịch**: Tệp .txt chứa văn bản/bộ truyện muốn dịch. Định dạng tốt nhất là:
-Quyển X:
-Chương Y:
-Nội dung chương.
-- **Tệp Prompt**: Tạo một tệp `.txt` chứa prompt (câu lệnh hướng dẫn) chi tiết để định hướng cho mô hình ngôn ngữ khi dịch.
-
-### 3. Cấu hình
-
-Mở tệp `enhanced/workflow_config.json` và chỉnh sửa các thông số cho phù hợp với nhu cầu của bạn.
-
+### 2. Cấu hình API keys
+Tạo file `secrets.json` ở thư mục gốc:
 ```json
 {
-  "active_task": {
-    "task_name": "Dich-sach-chuong-1",
-    "workflow_mode": "translate", // Chế độ: 'translate' hoặc 'retry'
-    "source_yaml_file": "duong/dan/den/sach.yaml",
-    "source_log_file_for_retry": "LATEST" // 'LATEST' hoặc đường dẫn đến file .log
-  },
-  "translate_api_settings": {
-    "api_key": "YOUR_API_KEY",
-    "base_url": "YOUR_API_ENDPOINT",
-    "model": "gpt-4-turbo",
-    "concurrent_requests": 6
-    // ... các cài đặt khác
-  },
-  "retry_api_settings": {
-    "api_key": "YOUR_API_KEY",
-    "base_url": "YOUR_API_ENDPOINT",
-    "model": "gpt-4-vision-preview",
-    "concurrent_requests": 3
-    // ... các cài đặt khác
-  },
-  "paths": {
-    "output_dir": "ket-qua/output",
-    "log_dir": "ket-qua/logs",
-    "prompt_file": "duong/dan/den/prompt.txt"
-    // ... các cài đặt khác
-  }
+    "openai_keys": [{"api_key": "sk-...", "base_url": "https://api.openai.com/v1"}],
+    "gemini_keys": [{"api_key": "AIza..."}],
+    "vertex_keys": [{"project_id": "your-project", "location": "global"}]
 }
 ```
 
-### 4. Chạy chương trình
+### 3. Workflow cơ bản
+```bash
+# 1. Tách văn bản
+cd splitter && python auto_splitter.py
 
-Tách file cần dịch thành định dạng .yaml với file enhanced_chapter_splitter.py
+# 2. Dịch thuật
+cd dich_cli && python main.py
 
-Sau khi đã cấu hình xong, di chuyển vào thư mục `enhanced` và thực thi tệp `master_workflow.py`.
+# 3. Upload (tùy chọn)
+cd AUTO && python main.py
+```
 
-Chương trình sẽ tự động đọc tệp cấu hình và chạy luồng công việc (`translate` hoặc `retry`) tương ứng.
+## 📖 Chi Tiết
 
-## Giải thích chi tiết `workflow_config.json`
+Xem README trong từng thư mục để biết hướng dẫn chi tiết:
+- [dich_cli/README.md](dich_cli/README.md) - Hướng dẫn dịch thuật
+- [AUTO/README.md](AUTO/README.md) - Hướng dẫn upload tự động
+- [splitter/README.md](splitter/README.md) - Hướng dẫn tách văn bản
+- [utils/README.md](utils/README.md) - Các tiện ích hỗ trợ
 
-- `active_task`: Khu vực chính để điều khiển tác vụ.
-  - `task_name`: Tên định danh cho tác vụ của bạn (hữu ích cho việc quản lý log).
-  - `workflow_mode`: Chọn `"translate"` để dịch một tệp YAML từ đầu hoặc `"retry"` để chỉ dịch lại các segment bị lỗi dựa trên một tệp log.
-  - `source_yaml_file`: Đường dẫn đến tệp YAML nguồn cần dịch.
-  - `source_log_file_for_retry`: Dành cho chế độ `retry`. Đặt là `"LATEST"` để tự động tìm tệp log mới nhất trong `log_dir`, hoặc chỉ định đường dẫn trực tiếp đến một tệp `.log`.
-- `translate_api_settings`: Cấu hình API cho lần dịch đầu tiên.
-- `retry_api_settings`: Cấu hình API dành riêng cho việc dịch lại các segment lỗi. Bạn có thể sử dụng một model khác hoặc giảm số lượng request đồng thời để tăng khả năng thành công.
-- `cleaner_settings`: Cài đặt cho việc làm sạch đầu ra.
-  - `enabled`: `true` để bật, `false` để tắt.
-  - `remove_thinking_blocks`: `true` sẽ tự động xóa các khối `<thinking>...</thinking>` khỏi tệp kết quả.
-- `paths`: Định nghĩa các đường dẫn làm việc cho dự án.
-  - `output_dir`: Thư mục lưu các tệp dịch thuật hoàn chỉnh.
-  - `log_dir`: Thư mục lưu các tệp log.
-  - `prompt_file`: Đường dẫn đến tệp chứa prompt dịch thuật.
-  - `intermediate_dir`: Thư mục chứa các tệp xử lý trung gian.
+
+
