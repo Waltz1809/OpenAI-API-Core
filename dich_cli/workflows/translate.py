@@ -94,13 +94,13 @@ class TranslateWorkflow:
             segments = self.processor.load_yaml(self.input_file)
             
             # Filter theo filtering config mới
-            original_count = len(segments)
-            segments = self.processor.filter_segments(
-                segments, self.config['filtering']
-            )
+            # original_count = len(segments)
+            # segments = self.processor.filter_segments(
+            #     segments, self.config['filtering']
+            # )
             
-            if len(segments) != original_count:
-                print(f"📊 Đã filter: {original_count} -> {len(segments)} segments")
+            # if len(segments) != original_count:
+            #     print(f"📊 Đã filter: {original_count} -> {len(segments)} segments")
             
             print(f"📊 Tổng cộng {len(segments)} segments cần xử lý")
             
@@ -256,7 +256,7 @@ class TranslateWorkflow:
                 
                 try:
                     # Dịch content
-                    user_prompt = f"Dịch đoạn văn sau từ tiếng Trung sang tiếng Việt:\n\n{segment['content']}"
+                    user_prompt = f"{segment['content']}"
                     
                     content, token_info = self.client.generate_content(
                         self.content_prompt,

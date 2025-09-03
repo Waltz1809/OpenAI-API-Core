@@ -1,46 +1,47 @@
 {
   "active_task": {
     "task_name": "Dịch văn bản",
+    "source_folder": "inventory/input/Volume_1A",
     "source_yaml_file": ""
   },
-  
+
   "translate_api": {
     "provider": "gemini",
-    "model": "gemini-2.5-flash",
+    "model": "gemini-2.5-pro",
     "temperature": 1.3,
     "concurrent_requests": 5,
-    "max_tokens": 15000,
-    "thinking_budget": 1500,
+    "max_tokens": 20000,
+    "thinking_budget": 2000,
     "delay": 10
   },
   
   "retry_api": {
-    "provider": "openai",
-    "model": "deepseek-reasoner",
+    "provider": "gemini",
+    "model": "gemini-2.5-pro",
     "temperature": 1.3,
-    "concurrent_requests": 3,
-    "max_tokens": 15000,
-    "thinking_budget": 1500,
+    "concurrent_requests": 5,
+    "max_tokens": 20000,
+    "thinking_budget": 2000,
     "max_retries": 3,
     "delay": 10
   },
   
   "context_api": {
-    "provider": "openai",
-    "model": "gemini-2.5-flash",
+    "provider": "gemini",
+    "model": "gemini-2.5-pro",
     "temperature": 0.5,
     "concurrent_requests": 2,
-    "max_tokens": 1500,
-    "thinking_budget": 0
+    "max_tokens": 2000,
+    "thinking_budget": 1000
   },
   
   "paths": {
-    "output_trans": "",
-    "log_trans": "",
+    "output_trans": "inventory/output",
+    "log_trans": "inventory/logs",
     "context_dir": "",
-    "prompt_file": "",
-    "title_prompt_file": "",
-    "context_prompt_file": ""
+    "prompt_file": "inventory/prompt/prompt.txt",
+    "title_prompt_file": "inventory/prompt/title_prompt.txt",
+    "context_prompt_file": "inventory/prompt/context_prompt.txt"
   },
   
   "title_api": {
@@ -49,7 +50,7 @@
     "temperature": 1.3,
     "concurrent_requests": 2,
     "max_tokens": 100,
-    "thinking_budget": 0,
+    "thinking_budget": 2000,
     "delay": 3
   },
   
