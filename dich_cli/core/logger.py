@@ -32,9 +32,14 @@ class Logger:
         date_part = now.strftime("%d%m%y")
         time_part = now.strftime("%H%M")
         
-        suffix = f"_{mode}" if mode != "translate" else ""
+        # Tránh duplicate suffix nếu base_name đã chứa mode
+        if mode != "translate" and not base_name.endswith(f"_{mode}"):
+            suffix = f"_{mode}"
+        else:
+            suffix = ""
+
         self.log_file = os.path.join(
-            log_dir, 
+            log_dir,
             f"{date_part}_{time_part}_{sdk_type}_{base_name}{suffix}.log"
         )
         

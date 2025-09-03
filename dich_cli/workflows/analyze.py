@@ -36,17 +36,18 @@ class AnalyzeWorkflow:
         self.sdk_code = AIClientFactory.get_sdk_code(config['context_api'])
         
         # Output files (context_dir chứa cả output và log)
-        context_dir = config['paths']['context_dir']
+        context_subdir = config['paths']['context_dir']
+
         self.output_file = self.processor.create_output_filename(
-            self.input_file, 
-            context_dir,
+            self.input_file,
+            context_subdir,
             self.sdk_code,
             "context"
         )
-        
-        # Logger (cũng save trong context_dir)
+
+        # Logger (cũng save trong context_subdir)
         self.logger = Logger(
-            context_dir,
+            context_subdir,
             self.base_name,
             self.sdk_code,
             "context"
@@ -61,7 +62,7 @@ class AnalyzeWorkflow:
         """Load prompt từ file."""
         if not os.path.exists(prompt_file):
             raise FileNotFoundError(f"Context prompt file không tồn tại: {prompt_file}")
-        
+
         with open(prompt_file, 'r', encoding='utf-8') as f:
             return f.read().strip()
     
@@ -106,8 +107,8 @@ class AnalyzeWorkflow:
                 os.remove(temp_output_file)
                 print(f"🗑️ Đã xóa temp file: {os.path.basename(temp_output_file)}")
             
-            # 6. Log summary
-            successful = len(analyzed_segments)
+            # 6. Log summary - đếm từ logger stats
+            successful = self.logger.request_count  # Số request thành công (có token_info)
             failed = len(segments) - successful
             self.logger.log_summary(
                 len(segments), successful, failed, self.client.get_model_name()

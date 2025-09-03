@@ -208,11 +208,11 @@ def detect_chapter_title(line, max_chapter, previous_chapter_number):
     # Loại bỏ BOM nếu có
     line = remove_bom(line)
     
-    # Các pattern nhận diện tiêu đề chương, được đơn giản hóa để chỉ lấy số chương
+    # Các pattern nhận diện tiêu đề chương, ƯU TIÊN "Chương" cao nhất
+    match_vietnamese = re.match(r'^[Cc]hương\s*(\d{1,3})', line, re.IGNORECASE)  # ƯU TIÊN CAO NHẤT
     match_chinese = re.match(r'^第([零一二三四五六七八九十百千]+)章', line)
     match_arabic = re.match(r'^第(\d{1,3})章', line)
-    match_vietnamese = re.match(r'^[Cc]hương\s*(\d{1,3})', line, re.IGNORECASE)
-    match_chap = re.match(r'^[Cc]hapter\s*(\d{1,3})', line, re.IGNORECASE)
+    match_chap = re.match(r'^[Cc]hap\s*(\d{1,3})', line, re.IGNORECASE)
     match_chinese_hua = re.match(r'^第([零一二三四五六七八九十百千]+)话', line)
     match_arabic_hua = re.match(r'^第(\d{1,3})话', line)
     match_chinese_maku = re.match(r'^第([零一二三四五六七八九十百千]+)幕', line)
@@ -221,12 +221,13 @@ def detect_chapter_title(line, max_chapter, previous_chapter_number):
     chapter_number = None
     title = line.strip() # SỬA: Luôn lấy cả dòng làm tiêu đề để đảm bảo chính xác
 
-    if match_chinese:
+    # ƯU TIÊN "Chương" cao nhất
+    if match_vietnamese:
+        chapter_number = int(match_vietnamese.group(1))
+    elif match_chinese:
         chapter_number = convert_chinese_number_to_arabic(match_chinese.group(1))
     elif match_arabic:
         chapter_number = int(match_arabic.group(1))
-    elif match_vietnamese:
-        chapter_number = int(match_vietnamese.group(1))
     elif match_chap:
         chapter_number = int(match_chap.group(1))
     elif match_chinese_hua:

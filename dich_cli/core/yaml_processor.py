@@ -275,7 +275,12 @@ class YamlProcessor:
         date_part = now.strftime("%d%m%y")
         time_part = now.strftime("%H%M")
         
-        suffix = f"_{mode}" if mode != "translate" else ""
+        # Tránh duplicate suffix nếu base_name đã chứa mode
+        if mode != "translate" and not base_name.endswith(f"_{mode}"):
+            suffix = f"_{mode}"
+        else:
+            suffix = ""
+
         filename = f"{date_part}_{time_part}_{sdk_type}_{base_name}{suffix}.yaml"
         
         return os.path.join(output_dir, filename)

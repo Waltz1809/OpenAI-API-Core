@@ -1,6 +1,6 @@
 {
-  "input_base_dir": "test/source/raw_txt",
-  "output_base_dir": "test/data/API_content",
+  "input_base_dir": "data/source/raw_txt",
+  "output_base_dir": "data/yaml/input",
   "tracking_file": "auto_splitter_history.json",
   
   "run_settings": {
@@ -32,13 +32,13 @@
       "segment_chars": 1500,
       "context_chars": 50000,
       "segment_suffix": "1k5",
-      "description": ""
+      "description": "Web Novel CN - segments nhỏ cho WN"
     }
   },
   
   "modes": {
     "segment_mode": {
-      "enabled": true,
+      "enabled": false,
       "mode": "1",
       "description": "Tách thành segments cho translation"
     },

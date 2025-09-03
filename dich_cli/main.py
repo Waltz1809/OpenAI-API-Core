@@ -7,6 +7,10 @@ Entry point chính với menu interactive
 import sys
 import os
 
+# Change working directory to project root
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.chdir(project_root)
+
 # Add core modules to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'core'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'workflows'))

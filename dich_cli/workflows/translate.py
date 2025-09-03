@@ -139,8 +139,8 @@ class TranslateWorkflow:
                 os.remove(temp_output_file)
                 print(f"🗑️ Đã xóa temp file: {os.path.basename(temp_output_file)}")
             
-            # 8. Log summary
-            successful = len(translated_segments)
+            # 8. Log summary - đếm từ logger stats
+            successful = self.logger.request_count  # Số request thành công (có token_info)
             failed = len(segments) - successful
             self.logger.log_summary(
                 len(segments), successful, failed, self.client.get_model_name()
@@ -256,7 +256,7 @@ class TranslateWorkflow:
                 
                 try:
                     # Dịch content
-                    user_prompt = f"Dịch đoạn văn sau từ tiếng Trung sang tiếng Việt:\n\n{segment['content']}"
+                    user_prompt = f"\n\n{segment['content']}"
                     
                     content, token_info = self.client.generate_content(
                         self.content_prompt,

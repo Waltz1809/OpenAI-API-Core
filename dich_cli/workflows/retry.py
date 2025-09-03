@@ -270,7 +270,7 @@ class RetryWorkflow:
                         if attempt > 0:
                             print(f"    🔄 Thử lại lần {attempt + 1}/{max_retries}")
                         
-                        user_prompt = f"Dịch đoạn văn sau từ tiếng Trung sang tiếng Việt:\n\n{segment['content']}"
+                        user_prompt = f"\n\n{segment['content']}"
                         
                         content, token_info = self.client.generate_content(
                             self.prompt,
