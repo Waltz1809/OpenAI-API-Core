@@ -1,11 +1,12 @@
 # Text Splitter Module
 
-A robust text processing module that intelligently splits large text files into manageable segments for translation pipelines. Features smart boundary detection, progress tracking, and resumable processing.
+A robust, modular text processing system that intelligently splits large text files into manageable segments for translation pipelines. Features smart boundary detection, progress tracking, resumable processing, and automated cache management.
 
 ## 🚀 Features
 
 ### Core Functionality
 - **Smart Text Splitting**: Breaks text at natural boundaries (sentences, paragraphs, words)
+- **Markdown Title Extraction**: Extracts `##` headers as titles, excludes them from content
 - **Configurable Segments**: Customizable segment length and file type filtering
 - **Structure Preservation**: Maintains input directory hierarchy in output
 - **YAML Output**: Structured output with unique IDs, titles, and content
@@ -14,18 +15,73 @@ A robust text processing module that intelligently splits large text files into 
 - **Progress Tracking**: Comprehensive logging with timestamps
 - **Resume Capability**: Skip already processed files automatically
 - **Change Detection**: Only reprocess files when content changes
+- **Cache Management**: Automatic Python cache cleaning utilities
 - **Error Handling**: Robust error logging and recovery
+- **Modular Architecture**: Clean, maintainable code structure
 
-## 📁 Configuration
+## 📁 Architecture
 
-The module uses a structured configuration file (`config.yml`) organized into logical sections:
+### Directory Structure
+```
+src/1_splitter/
+├── main.py              # Main entry point (streamlined)
+├── clean_cache.py       # Standalone cache cleaning utility
+├── config.yml           # Configuration file
+├── README.md            # This documentation
+├── ARCHITECTURE.md      # Detailed architecture notes
+└── core/                # Core modules
+    ├── __init__.py      # Package initialization
+    ├── config.py        # Configuration management
+    ├── logging.py       # Logging and tracking
+    ├── text_processor.py # Text processing and splitting
+    ├── file_manager.py  # File I/O operations
+    └── cache_manager.py # Python cache management
+```
+
+### Module Responsibilities
+
+#### **Main Entry Point (`main.py`)**
+- **Size**: ~200 lines (streamlined from 500+)
+- **Purpose**: Orchestrates the splitting process
+- **Features**: Command-line interface, workflow coordination
+
+#### **Core Modules (`core/`)**
+
+**ConfigManager (`config.py`)**
+- Configuration loading and validation
+- YAML file parsing with type checking
+- Getter methods for each config section
+
+**LogManager (`logging.py`)**
+- Session logging with timestamps
+- File processing history with MD5 hashing
+- Progress tracking and change detection
+
+**TextProcessor (`text_processor.py`)**
+- Title extraction from `##` headers
+- Smart text segmentation with boundary detection
+- Chapter name parsing from filenames
+
+**FileManager (`file_manager.py`)**
+- Project root detection and working directory management
+- Directory structure creation and file I/O
+- YAML output generation
+
+**CacheManager (`cache_manager.py`)**
+- Python cache file detection and removal
+- Cache size calculation and reporting
+- Safe cleanup with error handling
+
+## ⚙️ Configuration
+
+The module uses a structured configuration file (`config.yml`):
 
 ### Paths Configuration
 ```yaml
 paths:
-  input: "0_markdown_exports"      # Source directory for input files
-  output: "output/split_segments"  # Destination for processed segments
-  logs: "logs/splitter"           # Directory for log files
+  input: "0_markdown_exports/Volume_1A"  # Source directory
+  output: "input"                        # Destination for segments
+  logs: "src/inventory/logs/splitter"    # Log files directory
 ```
 
 ### Processing Configuration
@@ -34,31 +90,43 @@ processing:
   file_types:                     # Supported file extensions
     - ".md"
     - ".txt"
-  segment_length: 2000           # Maximum characters per segment
+  segment_length: 10000          # Maximum characters per segment
 ```
 
 ### Logging & Tracking Configuration
 ```yaml
 logging:
   enable_logging: true           # Enable comprehensive logging
-  skip_processed: true           # Skip unchanged files on restart
+  skip_processed: false          # Process all files (true to skip unchanged)
 ```
 
 ## 🎯 Usage
 
-### Basic Usage
+### Basic Text Splitting
 ```bash
 cd src/1_splitter
 python main.py
 ```
 
-### What Happens
-1. Scans input directory for supported file types
-2. Checks processing history (if tracking enabled)
-3. Processes only new or changed files
-4. Splits text into segments with smart boundaries
-5. Saves structured YAML output
-6. Updates processing log
+### Cache Management
+```bash
+# Clean Python cache files during splitting
+python main.py --clean-cache
+
+# Dry run - see what would be cleaned
+python main.py --clean-cache --dry-run
+
+# Standalone cache cleaner (interactive)
+python clean_cache.py
+```
+
+### What Happens During Processing
+1. **Initialization**: Validates config, sets up logging, finds project root
+2. **File Discovery**: Scans input directory for supported file types
+3. **Change Detection**: Checks processing history, skips unchanged files
+4. **Text Processing**: Extracts titles from `##` headers, splits content
+5. **Output Generation**: Saves structured YAML segments
+6. **Cleanup**: Updates processing log, optionally cleans cache
 
 ## 📄 Output Format
 
@@ -66,71 +134,71 @@ Each input file generates one YAML file containing all its segments:
 
 ```yaml
 - id: chapter_1_segment_1
-  title: "Participants in a Chance Meeting by the Storefront"
+  title: "Afterword"  # Extracted from ## header
   content: |
-    ## Chapter 01: Participants in a Chance Meeting by the Storefront
-    
-    Your life exists
-    In order to meet
-    What then, does a meeting mean...
+    Okay. If you are here for the first time, welcome.
+    If not, I'm glad we could meet again...
 
 - id: chapter_1_segment_2
-  title: "Participants in a Chance Meeting by the Storefront" 
+  title: "Afterword"  # Same title for all segments from same file
   content: |
-    Point Allocation (Life)
-    
-    The morning sun cast long shadows...
+    As always, I have ended up creating my usual type
+    of fairy tale that you can't call science fiction...
 ```
 
 ## 🔧 Technical Details
 
-### ID Generation
-- **Format**: `chapter_x_segment_y`
-- **Chapter Extraction**: Intelligent parsing from filename patterns
-- **Segment Numbering**: Sequential numbering within each file
-
-### Title Extraction
-- Extracted from first meaningful line of content
-- Automatically removes Markdown formatting (`##`, `**`, `*`)
-- Falls back to "Untitled" if no title found
+### Title Processing
+- **Extraction**: Finds first `##` header in markdown files
+- **Cleaning**: Removes markdown formatting (`**bold**`, `*italic*`)
+- **Exclusion**: Title header is NOT included in segment content
+- **Fallback**: Uses "Untitled" if no header found
 
 ### Smart Text Splitting
-The splitter uses a hierarchical approach to find optimal break points:
-1. **Sentence Boundaries**: Looks for `.`, `!`, `?` followed by space/newline
-2. **Paragraph Breaks**: Finds double newlines (`\n\n`)
-3. **Line Breaks**: Falls back to single newlines
+The splitter uses a hierarchical approach for optimal break points:
+1. **Sentence Boundaries**: `.`, `!`, `?` followed by space/newline
+2. **Paragraph Breaks**: Double newlines (`\n\n`)
+3. **Line Breaks**: Single newlines as fallback
 4. **Word Boundaries**: Last resort splitting at spaces
 
-### Directory Structure
-Input structure is perfectly mirrored in output:
+### Cache Management
+- **Detection**: Finds all `__pycache__` directories and `.pyc` files
+- **Size Reporting**: Calculates total cache size in human-readable format
+- **Safe Removal**: Handles errors gracefully during cleanup
+- **Confirmation**: Interactive mode requires user confirmation
+
+### Directory Structure Preservation
 ```
 Input:  0_markdown_exports/Volume_1A/Chapter_01.md
-Output: output/split_segments/Volume_1A/Chapter_01.yml
+Output: input/Volume_1A/Chapter_01.yml
 ```
 
 ## 📊 Logging & Tracking
 
 ### Session Logs
-- **Location**: `logs/splitter/splitter_log_YYYYMMDD_HHMMSS.txt`
-- **Content**: Timestamped processing events, errors, statistics
+- **Location**: `{log_path}/splitter_log_YYYYMMDD_HHMMSS.txt`
+- **Content**: Timestamped events, errors, statistics
 - **Format**: Human-readable with structured timestamps
 
 ### Processing History
-- **Location**: `logs/splitter/processed_files.json`
+- **Location**: `{log_path}/processed_files.json`
 - **Purpose**: Tracks completed files with content hashes
 - **Benefit**: Enables resumable processing and change detection
 
 ### Log Output Example
 ```
 [2025-09-05 14:30:15] Starting Text Splitter...
+[2025-09-05 14:30:15] Found OpenAI-API-Core directory: d:\Storage\novel\OpenAI-API-Core
+[2025-09-05 14:30:15] Changed working directory to: d:\Storage\novel\OpenAI-API-Core
 [2025-09-05 14:30:15] Found 45 files to process
-[2025-09-05 14:30:15] Skipping 12 already processed files
 [2025-09-05 14:30:16] Processing: Chapter_01.md
 [2025-09-05 14:30:16] Processed Chapter_01.md: 3 segments created
 [2025-09-05 14:30:16] Saved 3 segments to Chapter_01.yml
+[2025-09-05 14:30:17] Python cache size: 2.3 MB
+[2025-09-05 14:30:17] Tip: Use --clean-cache to clean Python cache files
 ```
 
-## ⚙️ Customization
+## 🔧 Customization
 
 ### Adding File Types
 ```yaml
@@ -138,14 +206,14 @@ processing:
   file_types:
     - ".md"
     - ".txt"
-    - ".rtf"    # Add new types here
+    - ".rtf"    # Add new types
     - ".docx"
 ```
 
 ### Adjusting Segment Size
 ```yaml
 processing:
-  segment_length: 3000  # Increase for larger segments
+  segment_length: 15000  # Increase for larger segments
 ```
 
 ### Disabling Tracking
@@ -158,14 +226,50 @@ logging:
 ## 🛠️ Error Handling
 
 The module includes comprehensive error handling:
-- **File Access Errors**: Logged with specific file information
-- **Encoding Issues**: Handles various text encodings gracefully
-- **Configuration Errors**: Clear error messages for invalid config
-- **Directory Creation**: Automatically creates missing output directories
+- **Configuration Validation**: Clear messages for missing/invalid config
+- **File Access Errors**: Detailed logging with specific file information
+- **Cache Cleanup Errors**: Safe handling of permission/access issues
+- **Directory Creation**: Automatic creation of missing directories
+- **Encoding Issues**: Graceful handling of various text encodings
 
-## 📈 Performance
+## 🚀 Performance & Benefits
 
-- **Efficient Processing**: Only processes changed files
-- **Memory Optimized**: Streams large files without loading entirely
-- **Fast Scanning**: Quick file system traversal with glob patterns
-- **Parallel Ready**: Architecture supports future parallel processing
+### Modular Design Benefits
+- ✅ **Maintainable**: Single responsibility principle, clean interfaces
+- ✅ **Testable**: Isolated modules for independent testing
+- ✅ **Extensible**: Easy to add new features to specific modules
+- ✅ **Reusable**: Core modules can be used in other projects
+
+### Processing Efficiency
+- ✅ **Change Detection**: Only processes modified files
+- ✅ **Memory Optimized**: Streams large files without full loading
+- ✅ **Fast Scanning**: Efficient file system traversal
+- ✅ **Cache Management**: Automated cleanup prevents disk bloat
+
+### Data Flow
+```
+ConfigManager → Load and validate configuration
+     ↓
+FileManager → Find project root, discover input files
+     ↓
+LogManager → Check processing history, setup logging
+     ↓
+TextProcessor → Extract titles, split content into segments
+     ↓
+FileManager → Save segments to YAML files
+     ↓
+LogManager → Update processing history, log completion
+     ↓
+CacheManager → Report cache size, optional cleanup
+```
+
+## 🔄 Future Enhancements
+
+The modular structure makes it easy to add:
+- **New text processors** for different file formats (PDF, DOCX, HTML)
+- **Alternative storage backends** (JSON, XML, database)
+- **Advanced logging** with different log levels and filters
+- **Configuration hot-reloading** for dynamic settings
+- **Plugin system** for custom text processing algorithms
+- **Parallel processing** for faster file processing
+- **Web interface** for remote operation and monitoring

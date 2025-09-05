@@ -1,3 +1,5 @@
 secrets.yml
 0_markdown_exports
-src/inventory/logs
+src/inventory/logs/*
+input/*
+output/*

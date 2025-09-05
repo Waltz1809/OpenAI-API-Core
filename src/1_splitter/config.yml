@@ -14,10 +14,10 @@ processing:
   file_types:                     # File extensions to process
     - ".md"
     - ".txt"
-  segment_length: 2000            # Number of characters per segment
+  segment_length: 10000            # Number of characters per segment
 
 # Logging & Tracking Settings
 # ---------------------------
 logging:
   enable_logging: true            # Enable/disable logging system
-  skip_processed: true            # Skip files that have already been processed
+  skip_processed: false            # Skip files that have already been processed

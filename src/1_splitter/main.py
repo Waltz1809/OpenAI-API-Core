@@ -5,9 +5,10 @@ Splits text files into segments for processing by translation pipeline.
 """
 
 import pathlib
+import argparse
 from typing import List, Dict, Any
 
-from core import ConfigManager, LogManager, TextProcessor, FileManager
+from core import ConfigManager, LogManager, TextProcessor, FileManager, CacheManager
 
 
 class TextSplitter:
@@ -31,6 +32,7 @@ class TextSplitter:
         )
         
         self.text_processor = TextProcessor()
+        self.cache_manager = CacheManager(self.project_root)
     
     def process_file(self, file_path: pathlib.Path) -> List[Dict[str, Any]]:
         """Process a single file and return list of segments."""
@@ -64,6 +66,48 @@ class TextSplitter:
         except Exception as e:
             self.log_manager.log(f"Error processing file {file_path}: {e}")
             return []
+    
+    def clean_cache(self, dry_run: bool = False):
+        """Clean Python cache files and directories."""
+        self.log_manager.log("Starting cache cleanup...")
+        
+        # Get cache info before cleaning
+        cache_size_before = self.cache_manager.get_cache_size()
+        pycache_dirs = self.cache_manager.find_pycache_directories()
+        pyc_files = self.cache_manager.find_pyc_files()
+        
+        self.log_manager.log(f"Found {len(pycache_dirs)} __pycache__ directories")
+        self.log_manager.log(f"Found {len(pyc_files)} standalone .pyc files")
+        self.log_manager.log(f"Total cache size: {self.cache_manager.format_size(cache_size_before)}")
+        
+        if dry_run:
+            self.log_manager.log("DRY RUN: No files will be deleted")
+            for pycache_dir in pycache_dirs:
+                self.log_manager.log(f"Would remove: {pycache_dir}")
+            for pyc_file in pyc_files:
+                self.log_manager.log(f"Would remove: {pyc_file}")
+            return
+        
+        # Perform cleanup
+        results = self.cache_manager.clean_pycache(dry_run=False)
+        
+        # Log results
+        self.log_manager.log(f"Removed {results['pycache_dirs_removed']}/{results['pycache_dirs_found']} __pycache__ directories")
+        self.log_manager.log(f"Removed {results['pyc_files_removed']}/{results['pyc_files_found']} .pyc files")
+        
+        if results['errors']:
+            self.log_manager.log(f"Encountered {len(results['errors'])} errors:")
+            for error in results['errors']:
+                self.log_manager.log(f"  - {error}")
+        
+        # Get cache size after cleaning
+        cache_size_after = self.cache_manager.get_cache_size()
+        freed_space = cache_size_before - cache_size_after
+        
+        if freed_space > 0:
+            self.log_manager.log(f"Freed {self.cache_manager.format_size(freed_space)} of disk space")
+        
+        self.log_manager.log("Cache cleanup completed")
     
     def run(self):
         """Main execution function."""
@@ -144,13 +188,32 @@ class TextSplitter:
             self.log_manager.log(f"Failed to process {failed_files} files")
         
         self.log_manager.log("Text Splitter finished successfully")
+        
+        # Optional: Clean cache after successful run
+        cache_size = self.cache_manager.get_cache_size()
+        if cache_size > 0:
+            self.log_manager.log(f"Python cache size: {self.cache_manager.format_size(cache_size)}")
+            self.log_manager.log("Tip: Use --clean-cache to clean Python cache files")
 
 
 def main():
     """Main entry point."""
+    parser = argparse.ArgumentParser(description='Text Splitter - Split text files into segments')
+    parser.add_argument('--clean-cache', action='store_true', 
+                       help='Clean Python cache files (__pycache__ and .pyc)')
+    parser.add_argument('--dry-run', action='store_true',
+                       help='Show what would be cleaned without actually deleting (use with --clean-cache)')
+    
+    args = parser.parse_args()
+    
     try:
         splitter = TextSplitter()
-        splitter.run()
+        
+        if args.clean_cache:
+            splitter.clean_cache(dry_run=args.dry_run)
+        else:
+            splitter.run()
+            
     except Exception as e:
         print(f"Error: {e}")
         return 1
