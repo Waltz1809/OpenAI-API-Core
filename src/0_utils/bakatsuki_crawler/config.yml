@@ -1,0 +1,8 @@
+# Configuration for bakatsuki crawler
+# MediaWiki API endpoint
+api: https://www.baka-tsuki.org/project/api.php
+# Root page used to discover volume links
+root_page: Kyoukai_Senjou_no_Horizon
+output:
+  # Directory (relative) to store raw .wiki exports
+  wiki_dir: wiki_exports
