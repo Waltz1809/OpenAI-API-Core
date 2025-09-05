@@ -1,11 +1,11 @@
 {
   "input_base_dir": "markdown_exports",
-  "output_base_dir": "inventory/output",
+  "output_base_dir": "inventory/input",
   "tracking_file": "auto_splitter_history.json",
 
   "split_settings": {
     "enabled": true,
-    "segment_chars": 20000,
+    "segment_chars": 10000,
     "mode": "1",
     "description": "Split into segments for translation"
   },
