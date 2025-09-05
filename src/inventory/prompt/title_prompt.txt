@@ -1,0 +1,3 @@
+When translate title, notice:
+- Prefer pure Vietnamese over Sino-Vietnamese; this can be ignore or less prefer in case of human/object title
+- avoid rarely use word; old word allowed
