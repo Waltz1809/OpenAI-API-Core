@@ -1,0 +1,23 @@
+# Text Splitter Configuration
+# ==========================
+
+# Input/Output Settings
+# --------------------
+paths:
+  input: "0_markdown_exports"             # Input directory (relative to project root)
+  output: "input"         # Output directory (relative to project root)
+  logs: "src/inventory/logs/splitter"      # Log files directory (relative to project root)
+
+# File Processing Settings
+# -----------------------
+processing:
+  file_types:                     # File extensions to process
+    - ".md"
+    - ".txt"
+  segment_length: 2000            # Number of characters per segment
+
+# Logging & Tracking Settings
+# ---------------------------
+logging:
+  enable_logging: true            # Enable/disable logging system
+  skip_processed: true            # Skip files that have already been processed
