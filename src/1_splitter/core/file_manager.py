@@ -72,6 +72,15 @@ class FileManager:
     def save_segments(self, segments: List[Dict[str, Any]], output_path: pathlib.Path) -> bool:
         """Save segments to YAML file."""
         try:
+            # Custom representer for multiline strings to use literal block style
+            def represent_literal_str(dumper, data):
+                if '\n' in data:
+                    return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|')
+                return dumper.represent_scalar('tag:yaml.org,2002:str', data)
+            
+            # Add the representer for strings
+            yaml.add_representer(str, represent_literal_str)
+            
             with open(output_path, 'w', encoding='utf-8') as f:
                 yaml.dump(segments, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
             return True
