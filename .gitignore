@@ -3,3 +3,12 @@ secrets.yml
 src/inventory/logs/*
 input/*
 output/*
+wiki_exports/
+markdown_exports/
+**/markdown_exports/
+**/wiki_exports/
+tmp_work/
+work/
+*.pandoc-cache/
+
+src/1_splitter/core/__pycache__

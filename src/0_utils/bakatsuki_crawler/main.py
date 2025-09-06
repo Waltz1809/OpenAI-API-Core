@@ -40,6 +40,7 @@ with _CONFIG_PATH.open("r", encoding="utf-8") as _f:
 
 API: str = _RAW_CFG.get("api", "https://www.baka-tsuki.org/project/api.php")
 ROOT_PAGE: str = _RAW_CFG.get("root_page", "Kyoukai_Senjou_no_Horizon")
+PREFIX_FILTER: str | None = _RAW_CFG.get("prefix_filter")  # Only crawl titles starting with this (case-sensitive)
 WIKI_DIR = Path(_RAW_CFG.get("output", {}).get("wiki_dir", "wiki_exports"))
 
 VISITED: set[str] = set()
@@ -70,12 +71,36 @@ def fetch_wikitext(title: str) -> str | None:
     return None
 
 
-def detect_volume(title: str) -> str:
-    """Detect 'Volume_X' or return 'Misc' if not found"""
-    match = re.search(r"Volume[_ ]?(\d+[A-Z]?)", title, re.IGNORECASE)
-    if match:
-        return f"Volume_{match.group(1)}"
-    return "Misc"
+def _strip_namespace(title: str) -> tuple[str, str]:
+    """Return (namespace, remainder). If no namespace, namespace is ''."""
+    if ":" in title:
+        ns, rest = title.split(":", 1)
+        return ns, rest
+    return "", title
+
+
+GROUP_VOLUME_PATTERN = re.compile(r"^(volume_[0-9]+[a-z]?)_", re.IGNORECASE)
+GROUP_GENERIC_PATTERN = re.compile(r"^([a-z]+_[0-9]+[a-z]?)_", re.IGNORECASE)
+
+
+def grouping_folder(full_title: str) -> str:
+    """Derive a lower-case grouping folder from the page title (without namespace).
+
+    Rules:
+      1. Lower-case and underscore-normalize (spaces -> underscores).
+      2. If starts with volume_<n>[letter]_<...> group by volume_<n>[letter].
+      3. Else if pattern <word>_<n>[letter]_<...> group by that base (e.g. aname_3).
+      4. Else fallback to 'misc'.
+    """
+    _, core = _strip_namespace(full_title)
+    norm = core.replace(" ", "_").lower()
+    m = GROUP_VOLUME_PATTERN.match(norm)
+    if m:
+        return m.group(1)
+    m2 = GROUP_GENERIC_PATTERN.match(norm)
+    if m2:
+        return m2.group(1)
+    return "misc"
 
 
 def sanitize_filename(name: str) -> str:
@@ -83,16 +108,21 @@ def sanitize_filename(name: str) -> str:
     return re.sub(r'[\\/*?:"<>|]', "_", name)
 
 
+# -------- Project root folder (one folder per novel/root page) ---------
+# Allow optional manual override via config key 'root_dir_name'. Otherwise derive
+# from ROOT_PAGE (lowercased, sanitized).
+_root_dir_override = _RAW_CFG.get("output", {}).get("root_dir_name") if _RAW_CFG.get("output") else None
+ROOT_DIR_NAME = sanitize_filename((_root_dir_override or ROOT_PAGE).lower())
+PROJECT_DIR = WIKI_DIR / ROOT_DIR_NAME  # All exports for this root page live here
+# -----------------------------------------------------------------------
+
+
 def title_to_path(base_dir: Path, title: str, ext: str) -> Path:
-    """
-    Build output path:
-    - Uses volume subfolder
-    - Keeps only title (no display name, to avoid long paths)
-    """
-    volume = detect_volume(title)
+    """Build output path using grouping folder derived via regex logic inside project folder."""
+    group = grouping_folder(title)
     base_name = title.replace(":", "_").replace(" ", "_")
     filename = sanitize_filename(base_name) + ext
-    return base_dir.joinpath(volume, filename)
+    return PROJECT_DIR.joinpath(group, filename)
 
 
 def save_file(content: str, path: Path):
@@ -124,15 +154,20 @@ def normalize_title(title: str) -> str:
 
 
 def process_page(title: str):
+    """Fetch and store a page, then recurse through links.
+
+    Modes:
+      - Filtered mode (PREFIX_FILTER provided & non-empty): only crawl titles starting with that prefix.
+      - Unfiltered mode (no prefix or empty string): crawl every page reachable from the starting seeds.
+    """
     norm_title = normalize_title(title)
     if norm_title in VISITED:
         return
     VISITED.add(norm_title)
 
-    if not title.startswith("Horizon:") and title != ROOT_PAGE:
-        return
-    if title.lower().startswith("horizon_talk:") or title.lower().startswith("talk:horizon:"):
-        return
+    if PREFIX_FILTER:  # filtered mode
+        if not title.startswith(PREFIX_FILTER):
+            return
 
     print(f"📖 Fetching {title} ...")
     wikitext = fetch_wikitext(title)
@@ -147,19 +182,26 @@ def process_page(title: str):
         process_page(link)
 
 
+ # If desired, could add a listing endpoint to pre-seed all pages matching prefix.
+
+
 def main():
-    # Use root only for discovering volume links (do not save root)
+    # Fetch root page for initial link discovery.
     root_wikitext = fetch_wikitext(ROOT_PAGE)
     if not root_wikitext:
         print("⚠️ Could not fetch root page")
         return
 
-    volume_links = extract_links(root_wikitext)
-    volumes = [link for link in volume_links if link.lower().startswith("horizon:volume")]
-    print(f"📚 Found {len(volumes)} volumes")
+    links = extract_links(root_wikitext)
+    if PREFIX_FILTER:
+        seeds = [l for l in links if l.startswith(PREFIX_FILTER)]
+        print(f"🔎 Prefix mode: {len(seeds)} seed pages matching '{PREFIX_FILTER}' from root")
+    else:
+        seeds = list(dict.fromkeys(links))  # preserve order, remove dups
+        print(f"🌐 Unfiltered mode: {len(seeds)} initial seed pages from root")
 
-    for vol in volumes:
-        process_page(vol)
+    for s in seeds:
+        process_page(s)
 
     print("\n🎉 Done!")
     print(f"Fetched {len(VISITED)} pages in total.")

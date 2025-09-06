@@ -1,0 +1,10 @@
+api: https://www.baka-tsuki.org/project/api.php
+
+# Required: folder containing .wiki files (relative to repo root or absolute)
+input_dir: wiki_exports/kyoukai_senjou_no_horizon
+
+# Required: folder to write .md files (relative to repo root or absolute)
+output_dir: 0_markdown_exports
+
+# Optional: overwrite existing .md files (default: true)
+overwrite: true
