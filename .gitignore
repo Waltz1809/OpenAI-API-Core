@@ -10,5 +10,7 @@ markdown_exports/
 tmp_work/
 work/
 *.pandoc-cache/
-
 src/1_splitter/core/__pycache__
+file_input/*
+inventory/logs/splitter/*
+inventory/logs/*

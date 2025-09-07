@@ -1,0 +1,80 @@
+{
+  "active_task": {
+    "task_name": "Dịch văn bản",
+    "source_yaml_file": "data/yaml/input/WebNovel/childhoodx2/chapter.yaml"
+  },
+  
+  "translate_api": {
+    "provider": "gemini",
+    "model": "gemini-2.5-pro",
+    "temperature": 1.3,
+    "concurrent_requests": 10,
+    "max_tokens": 20000,
+    "thinking_budget": 2000,
+    "delay": 45
+  },
+  
+  "retry_api": {
+    "provider": "openai",
+    "model": "deepseek-reasoner",
+    "temperature": 1.3,
+    "concurrent_requests": 5,
+    "max_tokens": 15000,
+    "thinking_budget": 1500,
+    "max_retries": 1,
+    "delay": 45
+  },
+  
+  "context_api": {
+    "provider": "gemini",
+    "model": "gemini-2.5-flash",
+    "temperature": 0.5,
+    "concurrent_requests": 10,
+    "max_tokens": 1500,
+    "thinking_budget": 0
+  },
+  
+  "paths": {
+    "output_trans": "data/yaml/output/WebNovel/childhoodx2",
+    "log_trans": "data/result/translation_log/WebNovel/childhoodx2",
+    "context_dir": "data/result/context/WebNovel/childhoodx2",
+    "prompt_file": "data/prompt/system/WebNovel/childhoodx2/childhoodx2_st.txt",
+    "title_prompt_file": "data/prompt/system/utils/title_system.txt",
+    "context_prompt_file": "data/prompt/system/utils/context_wn.txt"
+  },
+  
+  "title_api": {
+    "provider": "gemini",
+    "model": "gemini-2.5-flash",
+    "temperature": 1.3,
+    "concurrent_requests": 20,
+    "max_tokens": 100,
+    "thinking_budget": 0,
+    "delay": 0
+  },
+  
+  "title_translation": {
+    "enabled": true
+  },
+  
+  "filtering": {
+    "mode": "chapter",
+    "chapter_range": {
+      "enabled": true,
+      "start_volume": 1,
+      "end_volume": 999,
+      "start_chapter": 254,
+      "end_chapter": 650
+    },
+    "segment_range": {
+      "enabled": false,
+      "start_segment": 1,
+      "end_segment": 100
+    }
+  },
+  
+  "cleaner": {
+    "enabled": true,
+    "remove_thinking_blocks": false
+  }
+}
