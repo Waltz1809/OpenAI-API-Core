@@ -1,224 +1,417 @@
 #!/usr/bin/env python3
 """
-Text Splitter Module - Main Entry Point
-Splits text files into segments for processing by translation pipeline.
+Simple Text Splitter
+- Maintains directory tree structure
+- Splits MD files into YAML segments
+- Clean, minimal implementation with logging
 """
 
+import os
+import yaml
 import pathlib
-import argparse
-from typing import List, Dict, Any
+import re
+import logging
+import datetime
+from typing import List, Dict
 
-from core import ConfigManager, LogManager, TextProcessor, FileManager, CacheManager
+
+def load_config(config_path: str = "config.yml") -> Dict:
+    """Load configuration from YAML file."""
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            return yaml.safe_load(f)
+    except:
+        return {
+            'paths': {'input': '0_markdown_exports', 'output': 'input', 'logs': 'logs'},
+            'processing': {'segment_length': 25000},
+            'logging': {'enable_logging': True, 'log_level': 'INFO', 'max_log_size_mb': 10}
+        }
 
 
-class TextSplitter:
-    """Main Text Splitter class that orchestrates the splitting process."""
+def setup_logging(config: Dict, project_root: pathlib.Path) -> logging.Logger:
+    """Setup logging configuration."""
+    logger = logging.getLogger('splitter')
+    logger.handlers.clear()  # Clear existing handlers
     
-    def __init__(self, config_path: str = None):
-        """Initialize the splitter with configuration."""
-        # Initialize managers
-        self.config_manager = ConfigManager(config_path)
-        self.project_root = FileManager.find_project_root()
-        self.file_manager = FileManager(self.project_root)
-        
-        # Setup logging
-        logging_config = self.config_manager.get_logging()
-        paths_config = self.config_manager.get_paths()
-        
-        self.log_manager = LogManager(
-            project_root=self.project_root,
-            log_path=paths_config['logs'],
-            enable_logging=logging_config.get('enable_logging', True)
-        )
-        
-        self.text_processor = TextProcessor()
-        self.cache_manager = CacheManager(self.project_root)
+    # Set log level
+    log_level = getattr(logging, config.get('logging', {}).get('log_level', 'INFO').upper())
+    logger.setLevel(log_level)
     
-    def process_file(self, file_path: pathlib.Path) -> List[Dict[str, Any]]:
-        """Process a single file and return list of segments."""
-        try:
-            # Read file content
-            original_content = self.file_manager.read_file(file_path)
-            
-            # Extract title and content without title
-            title, content = self.text_processor.extract_title_and_content(original_content)
-            chapter_name = self.text_processor.get_chapter_name(file_path.name)
-            
-            # Split content into segments (content now excludes the title)
-            processing_config = self.config_manager.get_processing()
-            segment_length = processing_config['segment_length']
-            
-            segments = self.text_processor.split_text(content, segment_length)
-            
-            # Create segment objects
-            segment_objects = []
-            for i, segment_content in enumerate(segments, 1):
-                segment_obj = {
-                    'id': f"{chapter_name}_segment_{i}",
-                    'title': title,
-                    'content': segment_content.strip()
-                }
-                segment_objects.append(segment_obj)
-            
-            self.log_manager.log(f"Processed {file_path.name}: {len(segment_objects)} segments created")
-            return segment_objects
-            
-        except Exception as e:
-            self.log_manager.log(f"Error processing file {file_path}: {e}")
+    # Console handler (always enabled)
+    console_handler = logging.StreamHandler()
+    console_formatter = logging.Formatter('%(levelname)s: %(message)s')
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
+    
+    # File handler (if enabled in config)
+    if config.get('logging', {}).get('enable_logging', True):
+        log_dir = project_root / config['paths']['logs']
+        os.makedirs(log_dir, exist_ok=True)
+        
+        # Create log filename with timestamp
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        log_file = log_dir / f'splitter_{timestamp}.log'
+        
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
+        file_handler.setFormatter(file_formatter)
+        logger.addHandler(file_handler)
+        
+        logger.info(f"Log file created: {log_file}")
+    
+    return logger
+
+
+def find_project_root() -> pathlib.Path:
+    """Find project root directory."""
+    current = pathlib.Path(__file__).resolve()
+    # Go up to project root (from src/1_splitter to project root)
+    return current.parent.parent.parent
+
+
+def extract_title(content: str) -> tuple[str, str]:
+    """Extract title from first ## header."""
+    lines = content.split('\n')
+    title = "Untitled"
+    content_start = 0
+    
+    for i, line in enumerate(lines):
+        line = line.strip()
+        if line.startswith('## ') and len(line) > 3:
+            title = line[3:].strip()
+            content_start = i + 1
+            break
+        elif line.startswith('# ') and len(line) > 2:
+            title = line[2:].strip()
+            content_start = i + 1
+            break
+    
+    # Skip empty lines after title
+    while content_start < len(lines) and not lines[content_start].strip():
+        content_start += 1
+    
+    remaining_content = '\n'.join(lines[content_start:])
+    return title, remaining_content
+
+
+def generate_segment_id(filename: str, segment_num: int) -> str:
+    """Generate segment ID from filename."""
+    base_name = pathlib.Path(filename).stem
+    clean_name = re.sub(r'[^a-zA-Z0-9]', '_', base_name.lower())
+    clean_name = re.sub(r'_+', '_', clean_name).strip('_')
+    return f"{clean_name}_segment_{segment_num}"
+
+
+def split_text(text: str, max_length: int) -> List[str]:
+    """Split text into segments."""
+    if len(text) <= max_length:
+        return [text] if text.strip() else []
+    
+    segments = []
+    start = 0
+    
+    while start < len(text):
+        end = start + max_length
+        
+        if end >= len(text):
+            segment = text[start:].strip()
+            if segment:
+                segments.append(segment)
+            break
+        
+        # Find good break point
+        break_point = end
+        
+        # Try paragraph break
+        for i in range(min(500, end - start)):
+            pos = end - i - 1
+            if pos > start and pos + 1 < len(text) and text[pos:pos+2] == '\n\n':
+                break_point = pos + 2
+                break
+        
+        # Try sentence break
+        if break_point == end:
+            for i in range(min(300, end - start)):
+                pos = end - i - 1
+                if pos > start and text[pos] in '.!?' and pos + 1 < len(text) and text[pos + 1] in ' \n':
+                    break_point = pos + 1
+                    break
+        
+        # Try any newline
+        if break_point == end:
+            for i in range(min(200, end - start)):
+                pos = end - i - 1
+                if pos > start and text[pos] == '\n':
+                    break_point = pos + 1
+                    break
+        
+        segment = text[start:break_point].strip()
+        if segment:
+            segments.append(segment)
+        start = break_point
+    
+    return segments
+
+
+def process_file(file_path: pathlib.Path, segment_length: int, logger: logging.Logger) -> List[Dict]:
+    """Process a single MD file."""
+    try:
+        logger.debug(f"📖 Reading file: {file_path}")
+        
+        # Read file as raw text
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        if not content.strip():
+            logger.warning(f"📄 File is empty: {file_path.name}")
             return []
-    
-    def clean_cache(self, dry_run: bool = False):
-        """Clean Python cache files and directories."""
-        self.log_manager.log("Starting cache cleanup...")
         
-        # Get cache info before cleaning
-        cache_size_before = self.cache_manager.get_cache_size()
-        pycache_dirs = self.cache_manager.find_pycache_directories()
-        pyc_files = self.cache_manager.find_pyc_files()
+        # Log file statistics
+        file_size = len(content)
+        line_count = content.count('\n') + 1
+        logger.debug(f"📊 File stats: {file_size:,} chars, {line_count:,} lines")
         
-        self.log_manager.log(f"Found {len(pycache_dirs)} __pycache__ directories")
-        self.log_manager.log(f"Found {len(pyc_files)} standalone .pyc files")
-        self.log_manager.log(f"Total cache size: {self.cache_manager.format_size(cache_size_before)}")
+        # Extract title and content
+        title, text = extract_title(content)
+        logger.info(f"📑 Title extracted: '{title}' from {file_path.name}")
         
-        if dry_run:
-            self.log_manager.log("DRY RUN: No files will be deleted")
-            for pycache_dir in pycache_dirs:
-                self.log_manager.log(f"Would remove: {pycache_dir}")
-            for pyc_file in pyc_files:
-                self.log_manager.log(f"Would remove: {pyc_file}")
-            return
+        # Split into segments
+        text_segments = split_text(text, segment_length)
         
-        # Perform cleanup
-        results = self.cache_manager.clean_pycache(dry_run=False)
-        
-        # Log results
-        self.log_manager.log(f"Removed {results['pycache_dirs_removed']}/{results['pycache_dirs_found']} __pycache__ directories")
-        self.log_manager.log(f"Removed {results['pyc_files_removed']}/{results['pyc_files_found']} .pyc files")
-        
-        if results['errors']:
-            self.log_manager.log(f"Encountered {len(results['errors'])} errors:")
-            for error in results['errors']:
-                self.log_manager.log(f"  - {error}")
-        
-        # Get cache size after cleaning
-        cache_size_after = self.cache_manager.get_cache_size()
-        freed_space = cache_size_before - cache_size_after
-        
-        if freed_space > 0:
-            self.log_manager.log(f"Freed {self.cache_manager.format_size(freed_space)} of disk space")
-        
-        self.log_manager.log("Cache cleanup completed")
-    
-    def run(self):
-        """Main execution function."""
-        self.log_manager.log("Starting Text Splitter...")
-        
-        # Get configuration
-        paths_config = self.config_manager.get_paths()
-        processing_config = self.config_manager.get_processing()
-        logging_config = self.config_manager.get_logging()
-        
-        # Get all input files
-        input_files = self.file_manager.get_input_files(
-            paths_config['input'], 
-            processing_config['file_types']
-        )
-        self.log_manager.log(f"Found {len(input_files)} files to process")
-        
-        if not input_files:
-            self.log_manager.log("No files found matching the specified criteria")
-            return
-        
-        # Filter out already processed files if skip_processed is enabled
-        if logging_config.get('skip_processed', True):
-            unprocessed_files = [
-                f for f in input_files 
-                if not self.log_manager.is_file_processed(f, logging_config.get('skip_processed', True))
-            ]
-            skipped_count = len(input_files) - len(unprocessed_files)
-            if skipped_count > 0:
-                self.log_manager.log(f"Skipping {skipped_count} already processed files")
-            input_files = unprocessed_files
-        
-        if not input_files:
-            self.log_manager.log("All files have already been processed. Nothing to do.")
-            return
-        
-        # Process each file
-        total_segments = 0
-        processed_files = 0
-        failed_files = 0
-        
-        for file_path in input_files:
-            self.log_manager.log(f"Processing: {file_path.name}")
+        # Create segment objects and log details
+        segments = []
+        segment_ids = []
+        for i, segment_text in enumerate(text_segments, 1):
+            segment_id = generate_segment_id(file_path.name, i)
+            segment_ids.append(segment_id)
+            segments.append({
+                'id': segment_id,
+                'title': title,
+                'content': segment_text
+            })
             
-            # Process file
-            segments = self.process_file(file_path)
-            
-            if segments:
-                # Create output path
-                output_path = self.file_manager.create_output_structure(
-                    file_path, 
-                    paths_config['input'], 
-                    paths_config['output']
-                )
+            # Log each segment details
+            segment_size = len(segment_text)
+            logger.debug(f"  ✂️  Segment {i}: '{segment_id}' ({segment_size:,} chars)")
+        
+        # Log comprehensive file processing summary
+        logger.info(f"✅ PROCESSED: {file_path.name}")
+        logger.info(f"   📋 Title: '{title}'")
+        logger.info(f"   📊 Original size: {file_size:,} characters, {line_count:,} lines")
+        logger.info(f"   ✂️  Segments created: {len(segments)}")
+        logger.info(f"   🆔 Segment IDs: {', '.join(segment_ids)}")
+        
+        # Calculate processing statistics
+        total_segments_size = sum(len(s['content']) for s in segments)
+        avg_segment_size = total_segments_size // len(segments) if segments else 0
+        logger.info(f"   📈 Total segments size: {total_segments_size:,} chars")
+        logger.info(f"   📊 Average segment size: {avg_segment_size:,} chars")
+        
+        return segments
+        
+    except Exception as e:
+        logger.error(f"❌ ERROR processing {file_path.name}: {e}")
+        return []
+
+
+def save_yaml(segments: List[Dict], output_path: pathlib.Path, logger: logging.Logger):
+    """Save segments to YAML file."""
+    try:
+        os.makedirs(output_path.parent, exist_ok=True)
+        
+        with open(output_path, 'w', encoding='utf-8') as f:
+            # Write YAML with |- block style
+            for i, segment in enumerate(segments):
+                if i > 0:
+                    f.write("\n")
                 
-                # Save segments
-                try:
-                    self.file_manager.save_segments(segments, output_path)
-                    self.log_manager.log(f"Saved {len(segments)} segments to {output_path.name}")
-                    
-                    # Mark as processed
-                    self.log_manager.mark_file_processed(file_path)
-                    
-                    total_segments += len(segments)
-                    processed_files += 1
-                except Exception as e:
-                    self.log_manager.log(f"Failed to save segments for {file_path.name}: {e}")
-                    failed_files += 1
-            else:
-                self.log_manager.log(f"No segments generated for {file_path.name}")
-                failed_files += 1
+                f.write(f"- id: {segment['id']}\n")
+                f.write(f"  title: '{segment['title']}'\n")
+                f.write("  content: |-\n")
+                
+                # Write content with indentation
+                for line in segment['content'].split('\n'):
+                    f.write(f"    {line}\n")
         
-        # Save processed files log
-        self.log_manager.save_session()
+        # Log save details
+        file_size = output_path.stat().st_size
+        logger.info(f"💾 SAVED: {output_path}")
+        logger.info(f"   📁 Directory: {output_path.parent}")
+        logger.info(f"   📊 File size: {file_size:,} bytes")
+        logger.info(f"   ✂️  Contains {len(segments)} segments")
         
-        self.log_manager.log(f"Completed! Processed {processed_files} files, generated {total_segments} segments")
-        if failed_files > 0:
-            self.log_manager.log(f"Failed to process {failed_files} files")
-        
-        self.log_manager.log("Text Splitter finished successfully")
-        
-        # Optional: Clean cache after successful run
-        cache_size = self.cache_manager.get_cache_size()
-        if cache_size > 0:
-            self.log_manager.log(f"Python cache size: {self.cache_manager.format_size(cache_size)}")
-            self.log_manager.log("Tip: Use --clean-cache to clean Python cache files")
+    except Exception as e:
+        logger.error(f"❌ ERROR saving {output_path}: {e}")
 
 
 def main():
-    """Main entry point."""
-    parser = argparse.ArgumentParser(description='Text Splitter - Split text files into segments')
-    parser.add_argument('--clean-cache', action='store_true', 
-                       help='Clean Python cache files (__pycache__ and .pyc)')
-    parser.add_argument('--dry-run', action='store_true',
-                       help='Show what would be cleaned without actually deleting (use with --clean-cache)')
+    """Main function with comprehensive logging and statistics."""
+    # Load config
+    config = load_config()
+    project_root = find_project_root()
     
-    args = parser.parse_args()
+    # Setup logging
+    logger = setup_logging(config, project_root)
     
-    try:
-        splitter = TextSplitter()
+    # Fancy startup banner
+    logger.info("=" * 80)
+    logger.info("🚀 SIMPLE TEXT SPLITTER - ADVANCED LOGGING MODE")
+    logger.info("=" * 80)
+    logger.info(f"⏰ Started at: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"🔧 Python version: {os.sys.version.split()[0]}")
+    logger.info(f"📂 Working directory: {os.getcwd()}")
+    logger.info("=" * 80)
+    
+    input_dir = project_root / config['paths']['input']
+    output_dir = project_root / config['paths']['output']
+    segment_length = config['processing']['segment_length']
+    
+    # Log configuration details
+    logger.info("⚙️  CONFIGURATION:")
+    logger.info(f"   📁 Input directory:  {input_dir}")
+    logger.info(f"   📁 Output directory: {output_dir}")
+    logger.info(f"   ✂️  Segment length:   {segment_length:,} characters")
+    logger.info(f"   📊 Log level:        {config.get('logging', {}).get('log_level', 'INFO')}")
+    logger.info("-" * 80)
+    
+    if not input_dir.exists():
+        logger.error(f"❌ FATAL: Input directory not found: {input_dir}")
+        logger.error("🛑 Stopping execution - check your configuration")
+        return
+    
+    # Discovery phase
+    logger.info("� DISCOVERY PHASE:")
+    md_files = list(input_dir.rglob('*.md'))
+    logger.info(f"   📚 Found {len(md_files)} markdown files")
+    
+    # Organize files by directory for better logging
+    dirs_map = {}
+    total_input_size = 0
+    
+    for md_file in md_files:
+        rel_path = md_file.relative_to(input_dir)
+        dir_name = str(rel_path.parent) if rel_path.parent != pathlib.Path('.') else 'root'
         
-        if args.clean_cache:
-            splitter.clean_cache(dry_run=args.dry_run)
-        else:
-            splitter.run()
+        if dir_name not in dirs_map:
+            dirs_map[dir_name] = []
+        dirs_map[dir_name].append(md_file)
+        
+        # Calculate total input size
+        try:
+            total_input_size += md_file.stat().st_size
+        except:
+            pass
+    
+    logger.info(f"   � Total input size: {total_input_size:,} bytes ({total_input_size/1024/1024:.2f} MB)")
+    logger.info(f"   📁 Directories found: {len(dirs_map)}")
+    
+    # Log directory structure
+    for dir_name, files in sorted(dirs_map.items()):
+        logger.info(f"      📂 {dir_name}: {len(files)} files")
+    
+    logger.info("-" * 80)
+    
+    # Processing phase
+    logger.info("⚡ PROCESSING PHASE:")
+    processed_files = 0
+    total_segments = 0
+    failed_files = []
+    file_stats = []
+    
+    start_time = datetime.datetime.now()
+    
+    for i, md_file in enumerate(md_files, 1):
+        logger.info(f"📖 [{i:4d}/{len(md_files)}] Processing: {md_file.name}")
+        logger.debug(f"    Full path: {md_file}")
+        
+        # Process file
+        segments = process_file(md_file, segment_length, logger)
+        
+        if segments:
+            # Calculate output path (preserve directory structure)
+            rel_path = md_file.relative_to(input_dir)
+            output_file = output_dir / rel_path.with_suffix('.yml')
             
-    except Exception as e:
-        print(f"Error: {e}")
-        return 1
-    return 0
+            # Save segments
+            save_yaml(segments, output_file, logger)
+            
+            processed_files += 1
+            total_segments += len(segments)
+            
+            # Track file statistics
+            file_stats.append({
+                'name': md_file.name,
+                'path': str(rel_path),
+                'title': segments[0]['title'] if segments else 'Unknown',
+                'segments': len(segments),
+                'segment_ids': [s['id'] for s in segments]
+            })
+            
+            logger.info(f"   ✅ SUCCESS: {len(segments)} segments created")
+        else:
+            failed_files.append(md_file.name)
+            logger.warning(f"   ⚠️  SKIPPED: No segments created")
+        
+        logger.info("-" * 40)
+    
+    # Final statistics
+    end_time = datetime.datetime.now()
+    duration = end_time - start_time
+    
+    logger.info("=" * 80)
+    logger.info("📊 FINAL STATISTICS")
+    logger.info("=" * 80)
+    logger.info(f"⏰ Processing duration: {duration}")
+    logger.info(f"📚 Files discovered: {len(md_files)}")
+    logger.info(f"✅ Files processed: {processed_files}")
+    logger.info(f"❌ Files failed: {len(failed_files)}")
+    logger.info(f"✂️  Total segments: {total_segments}")
+    
+    if processed_files > 0:
+        avg_segments = total_segments / processed_files
+        logger.info(f"📊 Average segments per file: {avg_segments:.2f}")
+        
+        files_per_second = processed_files / duration.total_seconds() if duration.total_seconds() > 0 else 0
+        logger.info(f"⚡ Processing speed: {files_per_second:.2f} files/second")
+    
+    logger.info("-" * 80)
+    
+    # Detailed file breakdown
+    if file_stats:
+        logger.info("📋 DETAILED FILE BREAKDOWN:")
+        logger.info("-" * 80)
+        
+        for i, stats in enumerate(file_stats, 1):
+            logger.info(f"📄 [{i:3d}] FILE: {stats['name']}")
+            logger.info(f"     📁 Path: {stats['path']}")
+            logger.info(f"     📑 Title: '{stats['title']}'")
+            logger.info(f"     ✂️  Segments: {stats['segments']}")
+            logger.info(f"     � IDs: {', '.join(stats['segment_ids'])}")
+            if i < len(file_stats):
+                logger.info("-" * 40)
+    
+    # Failed files section
+    if failed_files:
+        logger.info("❌ FAILED FILES:")
+        logger.info("-" * 80)
+        for failed_file in failed_files:
+            logger.info(f"   💥 {failed_file}")
+    
+    # Summary
+    logger.info("=" * 80)
+    logger.info("🎉 PROCESSING COMPLETE")
+    logger.info("=" * 80)
+    logger.info(f"⏰ Finished at: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"✅ Success rate: {(processed_files/len(md_files)*100):.1f}%")
+    logger.info(f"📊 Total output files: {processed_files}")
+    logger.info(f"✂️  Total segments created: {total_segments}")
+    logger.info("=" * 80)
+    
+    # Also print concise summary to console for immediate feedback
+    print(f"🎉 Complete! Processed {processed_files}/{len(md_files)} files, Created {total_segments} segments")
+    if failed_files:
+        print(f"⚠️  {len(failed_files)} files failed - check log for details")
 
 
 if __name__ == "__main__":
-    exit(main())
+    main()

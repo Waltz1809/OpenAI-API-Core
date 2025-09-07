@@ -1,8 +1,73 @@
-# Text Splitter Module
+# Simple Text Splitter (1_splitter)
 
-A robust, modular text processing system that intelligently splits large text files into manageable segments for translation pipelines. Features smart boundary detection, progress tracking, resumable processing, and automated cache management.
+A clean, minimal text splitter with just 3 core features and logging:
 
-## 🚀 Features
+## Features
+
+1. **Same Directory Tree**: Output maintains the same folder structure as input
+2. **MD to YAML Conversion**: Each `.md` file becomes a `.yml` file with segment array  
+3. **Clean Implementation**: No cache management, no complex dependencies
+4. **Configurable Logging**: File-based logging with timestamps and log levels
+
+## Usage
+
+```bash
+cd src/1_splitter
+python main.py
+```
+
+## Configuration
+
+Edit `config.yml`:
+
+```yaml
+paths:
+  input: "0_markdown_exports"
+  output: "input"
+  logs: "src/inventory/logs/splitter"
+  
+processing:
+  segment_length: 25000
+
+logging:
+  enable_logging: true
+  log_level: "INFO"           # DEBUG, INFO, WARNING, ERROR
+  max_log_size_mb: 10
+```
+
+## Logging Features
+
+- **Dual Output**: Console + file logging
+- **Timestamped Files**: `splitter_YYYYMMDD_HHMMSS.log`
+- **Log Levels**: DEBUG (detailed), INFO (normal), WARNING, ERROR
+- **Structured Format**: `timestamp | level | message`
+- **Configurable Path**: Set log directory in config
+
+## Example
+
+Input: `0_markdown_exports/volume_1/Chapter_1.md`
+```markdown
+## Chapter 1: The Beginning
+
+This is the content of the chapter...
+```
+
+Output: `input/volume_1/Chapter_1.yml`
+```yaml
+- id: chapter_1_segment_1
+  title: 'Chapter 1: The Beginning'
+  content: |-
+    This is the content of the chapter...
+```
+
+Log: `src/inventory/logs/splitter/splitter_20250907_144825.log`
+```
+2025-09-07 14:48:25,767 | INFO | 🚀 Simple Text Splitter Started
+2025-09-07 14:48:25,768 | INFO | Processed Chapter_1.md: 1 segments created
+2025-09-07 14:48:25,769 | INFO | Saved: input/volume_1/Chapter_1.yml
+```
+
+Simple, focused, and now with proper logging!
 
 ### Core Functionality
 - **Smart Text Splitting**: Breaks text at natural boundaries (sentences, paragraphs, words)
