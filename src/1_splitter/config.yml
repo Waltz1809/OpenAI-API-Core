@@ -14,7 +14,7 @@ processing:
   file_types:                     # File extensions to process
     - ".md"
     - ".txt"
-  segment_length: 10000            # Number of characters per segment
+  segment_length: 25000            # Number of characters per segment
 
 # Logging & Tracking Settings
 # ---------------------------

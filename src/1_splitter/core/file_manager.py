@@ -78,11 +78,15 @@ class FileManager:
                     return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|')
                 return dumper.represent_scalar('tag:yaml.org,2002:str', data)
             
-            # Add the representer for strings
-            yaml.add_representer(str, represent_literal_str)
+            # Create a custom Dumper class with our representer
+            class LiteralDumper(yaml.SafeDumper):
+                pass
+            
+            # Add the representer to our custom dumper
+            LiteralDumper.add_representer(str, represent_literal_str)
             
             with open(output_path, 'w', encoding='utf-8') as f:
-                yaml.dump(segments, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                yaml.dump(segments, f, Dumper=LiteralDumper, default_flow_style=False, allow_unicode=True, sort_keys=False)
             return True
         except Exception as e:
             raise Exception(f"Error saving segments to {output_path}: {e}")
