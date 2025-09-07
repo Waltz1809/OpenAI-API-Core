@@ -1,71 +1,49 @@
 # Multi-Key Configuration Example
 # Ví dụ cách config multiple API keys cho Dich CLI
 
-## secrets.json format (supports both single and multiple keys)
+## secrets.yml format (supports both single and multiple keys)
 
-### Option 1: Single key per provider (current format - vẫn hoạt động)
-```json
-{
-    "openai_api_key": "sk-your-openai-key",
-    "openai_base_url": "https://api.openai.com/v1",
-    "gemini_api_key": "AIza-your-gemini-key",
-    "vertex_project_id": "your-vertex-project",
-    "vertex_location": "global"
-}
+### Option 1: Single key per provider
+```yaml
+openai_api_key: sk-your-openai-key
+openai_base_url: https://api.openai.com/v1
+gemini_api_key: AIza-your-gemini-key
+vertex_project_id: your-vertex-project
+vertex_location: global
 ```
 
 ### Option 2: Multiple keys per provider (round-robin)
-```json
-{
-    "openai_keys": [
-        {
-            "api_key": "sk-project1-key",
-            "base_url": "https://api.openai.com/v1"
-        },
-        {
-            "api_key": "sk-project2-key", 
-            "base_url": "https://api.openai.com/v1"
-        },
-        {
-            "api_key": "sk-deepseek-key",
-            "base_url": "https://api.deepseek.com/v1"
-        }
-    ],
-    "gemini_keys": [
-        {
-            "api_key": "AIza-project1-key"
-        },
-        {
-            "api_key": "AIza-project2-key"
-        },
-        {
-            "api_key": "AIza-project3-key"
-        }
-    ],
-    "vertex_keys": [
-        {
-            "project_id": "my-vertex-project1",
-            "location": "global"
-        },
-        {
-            "project_id": "my-vertex-project2", 
-            "location": "us-central1"
-        }
-    ]
-}
+```yaml
+openai_keys:
+    - api_key: sk-project1-key
+        base_url: https://api.openai.com/v1
+    - api_key: sk-project2-key
+        base_url: https://api.openai.com/v1
+    - api_key: sk-deepseek-key
+        base_url: https://api.deepseek.com/v1
+
+gemini_keys:
+    - api_key: AIza-project1-key
+    - api_key: AIza-project2-key
+    - api_key: AIza-project3-key
+
+vertex_keys:
+    - project_id: my-vertex-project1
+        location: global
+    - project_id: my-vertex-project2
+        location: us-central1
 ```
 
-### Option 3: Mixed format (backward compatible)
-```json
-{
-    "openai_keys": [
-        {"api_key": "sk-key1", "base_url": "https://api.openai.com/v1"},
-        {"api_key": "sk-key2", "base_url": "https://api.deepseek.com/v1"}
-    ],
-    "gemini_api_key": "AIza-single-key",
-    "vertex_project_id": "single-vertex-project",
-    "vertex_location": "global"
-}
+### Option 3: Mixed format (single + multi) vẫn hỗ trợ
+```yaml
+openai_keys:
+    - api_key: sk-key1
+        base_url: https://api.openai.com/v1
+    - api_key: sk-key2
+        base_url: https://api.deepseek.com/v1
+gemini_api_key: AIza-single-key
+vertex_project_id: single-vertex-project
+vertex_location: global
 ```
 
 ## Lợi ích của Multi-Key Setup

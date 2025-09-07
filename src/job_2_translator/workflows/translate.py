@@ -17,7 +17,7 @@ from core.logger import Logger
 class TranslateWorkflow:
     """Workflow để dịch cả content và title."""
     
-    def __init__(self, config: Dict, secret: Dict):
+    def __init__(self, config: Dict, secret: Dict, input_file: str | None = None, output_base_override: str | None = None):
         self.config = config
         self.secret = secret
         self.processor = YamlProcessor()
@@ -35,16 +35,20 @@ class TranslateWorkflow:
         self.title_prompt = self._load_prompt(config['paths']['title_prompt_file'])
         
         # Setup paths
-        self.input_file = config['active_task']['source_yaml_file']
+        if input_file:
+            self.input_file = input_file
+        else:
+            self.input_file = config['active_task'].get('source_yaml_file') or ''
         self.base_name = self.processor.get_base_name(self.input_file)
         
         # Get SDK code from factory
         self.sdk_code = AIClientFactory.get_sdk_code(config['translate_api'])
         
         # Output files
+        base_output_dir = output_base_override or config['paths']['output_trans']
         self.output_file = self.processor.create_output_filename(
-            self.input_file, 
-            config['paths']['output_trans'],
+            self.input_file,
+            base_output_dir,
             self.sdk_code
         )
         
@@ -93,34 +97,43 @@ class TranslateWorkflow:
             print("\n📖 Đang load file YAML...")
             segments = self.processor.load_yaml(self.input_file)
             
-            # Filter theo filtering config mới
-            original_count = len(segments)
-            segments = self.processor.filter_segments(
-                segments, self.config['filtering']
-            )
-            
-            if len(segments) != original_count:
-                print(f"📊 Đã filter: {original_count} -> {len(segments)} segments")
-            
             print(f"📊 Tổng cộng {len(segments)} segments cần xử lý")
             
             # 2. Dịch content trước
             print("\n📝 Đang dịch content...")
-            translated_segments = self._translate_content(segments)
+            translated_segments, failed_ids = self._translate_content(segments)
             
-            # 3. Dịch titles sau (nếu enabled)
+            # 3. Retry tự động các segments thất bại (nếu có)
+            if failed_ids:
+                print(f"\n🔄 Tự động retry {len(failed_ids)} segments lỗi...")
+                retry_limit = self.config['translate_api'].get('max_retries', 0)
+                if retry_limit > 0:
+                    retry_fixed = self._retry_failed_segments(failed_ids, segments, retry_limit)
+                    # Patch vào translated_segments
+                    if retry_fixed:
+                        fixed_map = {s['id']: s for s in retry_fixed}
+                        for i, seg in enumerate(translated_segments):
+                            if seg['id'] in fixed_map:
+                                translated_segments[i] = fixed_map[seg['id']]
+                    remaining_failed = [fid for fid in failed_ids if fid not in {s['id'] for s in retry_fixed}]
+                    if remaining_failed:
+                        print(f"⚠️ Còn {len(remaining_failed)} segments vẫn lỗi sau retry: {remaining_failed[:5]}{'...' if len(remaining_failed)>5 else ''}")
+                else:
+                    print("⚠️ Retry bị tắt (max_retries=0)")
+
+            # 4. Dịch titles sau (nếu enabled)
             translated_titles = {}
             if self.config['title_translation']['enabled'] and self.title_client:
                 print("\n🏷️ Đang dịch titles...")
                 translated_titles = self._translate_titles(segments)
                 print(f"✅ Đã dịch {len(translated_titles)} titles")
             
-            # 4. Merge titles vào segments
+            # 5. Merge titles vào segments
             if translated_titles:
                 print("\n🔄 Đang merge titles...")
                 self._merge_titles(translated_segments, translated_titles)
             
-            # 5. Save temp file trước
+            # 6. Save temp file trước
             temp_output_file = os.path.join(
                 os.path.dirname(self.output_file), 
                 f"temp_{os.path.basename(self.output_file)}"
@@ -129,17 +142,17 @@ class TranslateWorkflow:
             self.processor.save_yaml(translated_segments, temp_output_file)
             print(f"✅ Kết quả dịch thô lưu tại: {temp_output_file}")
             
-            # 6. Clean từ temp file -> final file
+            # 7. Clean từ temp file -> final file
             print(f"\n🧹 Đang clean từ temp file...")
             self._clean_yaml_file(temp_output_file, self.output_file)
             print(f"✅ Clean hoàn thành! File cuối cùng: {self.output_file}")
             
-            # 7. Xóa temp file
+            # 8. Xóa temp file
             if os.path.exists(temp_output_file):
                 os.remove(temp_output_file)
                 print(f"🗑️ Đã xóa temp file: {os.path.basename(temp_output_file)}")
             
-            # 8. Log summary - đếm từ logger stats
+            # 9. Log summary - đếm từ logger stats
             successful = self.logger.request_count  # Số request thành công (có token_info)
             failed = len(segments) - successful
             self.logger.log_summary(
@@ -202,11 +215,12 @@ class TranslateWorkflow:
         
         return translated_titles
     
-    def _translate_content(self, segments: List[Dict]) -> List[Dict]:
-        """Dịch content của segments bằng threading."""
+    def _translate_content(self, segments: List[Dict]) -> Tuple[List[Dict], List[str]]:
+        """Dịch content của segments bằng threading. Trả về (segments, failed_ids)."""
         q = queue.Queue()
         result_dict = {}
         lock = threading.Lock()
+        failed_ids: List[str] = []
         
         # Đưa segments vào queue
         for idx, segment in enumerate(segments):
@@ -237,10 +251,13 @@ class TranslateWorkflow:
         # Thu thập kết quả
         results = []
         for idx in sorted(result_dict.keys()):
-            if result_dict[idx] is not None:
-                results.append(result_dict[idx])
-        
-        return results
+            seg = result_dict[idx]
+            if seg is not None:
+                results.append(seg)
+            else:
+                # Collect failed id (original segment id accessible from queue entries stored earlier)
+                pass  # already tracked in worker
+        return results, failed_ids
     
     def _content_worker(self, q: queue.Queue, result_dict: Dict, 
                        lock: threading.Lock, total_segments: int):
@@ -278,11 +295,13 @@ class TranslateWorkflow:
                 
                 except Exception as e:
                     with lock:
-                        # Giữ segment gốc nếu lỗi
-                        result_dict[idx] = segment
-                        self.logger.log_segment(
-                            segment_id, "THẤT BẠI", str(e)
-                        )
+                        result_dict[idx] = segment  # mark attempted
+                        self.logger.log_segment(segment_id, "THẤT BẠI", str(e))
+                        # Track failure id
+                        # Use a list on self to aggregate
+                        if not hasattr(self, '_failed_ids'):
+                            self._failed_ids = []
+                        self._failed_ids.append(segment_id)
                 
                 q.task_done()
                 
@@ -331,3 +350,43 @@ class TranslateWorkflow:
         for segment in segments:
             if 'content' in segment:
                 segment['content'] = self.processor.clean_content(segment['content'])
+
+    def _retry_failed_segments(self, failed_ids: List[str], original_segments: List[Dict], max_retries: int) -> List[Dict]:
+        """Retry các segment thất bại sử dụng cùng client.
+
+        Args:
+            failed_ids: danh sách id lỗi từ lượt đầu
+            original_segments: toàn bộ segments gốc
+            max_retries: số lần thử tối đa cho mỗi segment
+        Returns:
+            List[Dict]: các segment đã dịch thành công trong retry
+        """
+        id_map = {s['id']: s for s in original_segments}
+        fixed: List[Dict] = []
+        for seg_id in failed_ids:
+            if seg_id not in id_map:
+                continue
+            original = id_map[seg_id]
+            attempt = 0
+            success = False
+            last_error = None
+            while attempt < max_retries and not success:
+                attempt += 1
+                try:
+                    user_prompt = f"\n\n{original['content']}"
+                    content, token_info = self.client.generate_content(self.content_prompt, user_prompt)
+                    translated_segment = {
+                        'id': original['id'],
+                        'title': original['title'],
+                        'content': content
+                    }
+                    fixed.append(translated_segment)
+                    self.logger.log_segment(seg_id, f"THÀNH CÔNG (retry {attempt})", token_info=token_info)
+                    success = True
+                except Exception as e:
+                    last_error = str(e)
+                    if attempt < max_retries:
+                        time.sleep(min(2 ** attempt, 30))  # simple backoff
+            if not success:
+                self.logger.log_segment(seg_id, f"THẤT BẠI sau {max_retries} retry", last_error)
+        return fixed

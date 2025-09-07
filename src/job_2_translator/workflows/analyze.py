@@ -16,27 +16,27 @@ from core.logger import Logger
 
 class AnalyzeWorkflow:
     """Workflow để phân tích ngữ cảnh."""
-    
-    def __init__(self, config: Dict, secret: Dict):
+
+    def __init__(self, config: Dict, secret: Dict, input_file: str | None = None, output_base_override: str | None = None):
         self.config = config
         self.secret = secret
         self.processor = YamlProcessor()
-        
+
         # Setup API client cho context analysis
         self.client = AIClientFactory.create_client(config['context_api'], secret)
-        
+
         # Load prompt
         self.prompt = self._load_prompt(config['paths']['context_prompt_file'])
-        
+
         # Setup paths
-        self.input_file = config['active_task']['source_yaml_file']
+        self.input_file = input_file or config['active_task'].get('source_yaml_file') or ''
         self.base_name = self.processor.get_base_name(self.input_file)
-        
+
         # Get SDK code from factory
         self.sdk_code = AIClientFactory.get_sdk_code(config['context_api'])
-        
-        # Output files (context_dir chứa cả output và log)
-        context_subdir = config['paths']['context_dir']
+
+        # Output base directory override (to maintain parallel directory structure)
+        context_subdir = output_base_override or config['paths']['context_dir']
 
         self.output_file = self.processor.create_output_filename(
             self.input_file,
@@ -52,7 +52,7 @@ class AnalyzeWorkflow:
             self.sdk_code,
             "context"
         )
-        
+
         print(f"🔧 Context SDK: {self.sdk_code.upper()}")
         print(f"🤖 Context Model: {self.client.get_model_name()}")
         print(f"📝 Output: {self.output_file}")
@@ -72,15 +72,6 @@ class AnalyzeWorkflow:
             # 1. Load và filter YAML
             print("\n📖 Đang load file YAML...")
             segments = self.processor.load_yaml(self.input_file)
-            
-            # Filter theo filtering config mới
-            original_count = len(segments)
-            segments = self.processor.filter_segments(
-                segments, self.config['filtering']
-            )
-            
-            if len(segments) != original_count:
-                print(f"📊 Đã filter: {original_count} -> {len(segments)} segments")
             
             print(f"📊 Tổng cộng {len(segments)} segments cần phân tích")
             

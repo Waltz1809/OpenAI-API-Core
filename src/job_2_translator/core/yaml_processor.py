@@ -126,62 +126,7 @@ class YamlProcessor:
             return int(segment_match.group(1))
         return 0
     
-    def filter_by_segment_range(self, segments: List[Dict], segment_range: Dict) -> List[Dict]:
-        """
-        Filter segments theo segment range.
-        
-        Args:
-            segments: Danh sách segments
-            segment_range: {"enabled": bool, "start_segment": int, "end_segment": int}
-        
-        Returns:
-            List[Dict]: Segments đã được filter
-        """
-        if not segment_range.get('enabled', False):
-            return segments
-        
-        start_seg = segment_range.get('start_segment', 1)
-        end_seg = segment_range.get('end_segment', 999)
-        
-        filtered = []
-        for segment in segments:
-            segment_num = self.parse_segment_info(segment.get('id', ''))
-            
-            if start_seg <= segment_num <= end_seg:
-                filtered.append(segment)
-        
-        return filtered
-    
-    def filter_segments(self, segments: List[Dict], filtering_config: Dict) -> List[Dict]:
-        """
-        Filter segments theo config mới với mode selection.
-        
-        Args:
-            segments: Danh sách segments
-            filtering_config: {
-                "mode": "chapter" hoặc "segment",
-                "chapter_range": {...},
-                "segment_range": {...}
-            }
-        
-        Returns:
-            List[Dict]: Segments đã được filter
-        """
-        mode = filtering_config.get('mode', 'chapter')
-        
-        if mode == 'segment':
-            return self.filter_by_segment_range(
-                segments, 
-                filtering_config.get('segment_range', {})
-            )
-        elif mode == 'chapter':
-            return self.filter_by_chapter_range(
-                segments, 
-                filtering_config.get('chapter_range', {})
-            )
-        else:
-            # Fallback: không filter
-            return segments
+    # Filtering logic removed (chapter/segment range). All segments now processed.
     
     def parse_chapter_info(self, segment_id: str) -> tuple:
         """
@@ -220,35 +165,7 @@ class YamlProcessor:
         
         return chapters
     
-    def filter_by_chapter_range(self, segments: List[Dict], chapter_range: Dict) -> List[Dict]:
-        """
-        Filter segments theo chapter range.
-        
-        Args:
-            segments: Danh sách segments
-            chapter_range: {"enabled": bool, "start_volume": int, "end_volume": int, 
-                           "start_chapter": int, "end_chapter": int}
-        
-        Returns:
-            List[Dict]: Segments đã được filter
-        """
-        if not chapter_range.get('enabled', False):
-            return segments
-        
-        start_vol = chapter_range.get('start_volume', 1)
-        end_vol = chapter_range.get('end_volume', 999)
-        start_chap = chapter_range.get('start_chapter', 1)
-        end_chap = chapter_range.get('end_chapter', 999)
-        
-        filtered = []
-        for segment in segments:
-            volume, chapter = self.parse_chapter_info(segment.get('id', ''))
-            
-            if (start_vol <= volume <= end_vol and 
-                start_chap <= chapter <= end_chap):
-                filtered.append(segment)
-        
-        return filtered
+    # Chapter/segment range filtering removed.
     
     def get_base_name(self, file_path: str) -> str:
         """Lấy base name từ file path để dùng cho naming convention."""
