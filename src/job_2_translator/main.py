@@ -6,15 +6,27 @@ Entry point chính với menu interactive
 
 import sys
 import os
+import pathlib
+import threading
+import queue
+from typing import List
 
-# Determine repo root (this file: <repo_root>/src/job_2_translator/main.py)
-repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-os.chdir(repo_root)
+def find_project_root() -> pathlib.Path:
+    """Locate the project root (three levels up from this file).
+    This duplicates the logic used in other jobs but is self-contained
+    to keep jobs independent (no cross-imports).
+    """
+    return pathlib.Path(__file__).resolve().parent.parent.parent
+
+
+# Resolve and switch to project root
+project_root = find_project_root()
+os.chdir(project_root)
 
 def _resolve_path(p: str) -> str:
     if not p:
         return p
-    return p if os.path.isabs(p) else os.path.join(repo_root, p)
+    return p if os.path.isabs(p) else os.path.join(str(project_root), p)
 
 # Add core modules to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'core'))
@@ -53,51 +65,96 @@ def get_user_choice():
             print(f"❌ Lỗi: {e}")
 
 
+def _collect_yaml_files(input_dir: str) -> List[str]:
+    files: List[str] = []
+    for root, _dirs, fnames in os.walk(input_dir):
+        for fname in fnames:
+            if fname.lower().endswith(('.yml', '.yaml')):
+                files.append(os.path.join(root, fname))
+    return files
+
+
 def run_workflow(choice: str, config: dict, secret: dict):
-    """Chạy workflow tương ứng với lựa chọn."""
+    """Chạy workflow tương ứng với lựa chọn (đa luồng ở cấp file)."""
     try:
-        if choice == '1':
-            print(f"\n🚀 BẮT ĐẦU WORKFLOW: DỊCH THUẬT")
-            input_dir = config['active_task'].get('input_dir')
-            if not input_dir:
-                raise ValueError("Thiếu 'input_dir' trong config.active_task")
-            input_dir = _resolve_path(input_dir)
-            if not os.path.isdir(input_dir):
-                raise FileNotFoundError(f"Không tìm thấy thư mục input_dir: {input_dir}")
-            print(f"📁 Thư mục nguồn: {input_dir}")
+        if choice not in ('1', '2'):
+            return True
 
-            # Duyệt tất cả YAML trong thư mục (đệ quy)
-            for root, _dirs, files in os.walk(input_dir):
-                for fname in files:
-                    if not fname.lower().endswith(('.yml', '.yaml')):
-                        continue
-                    full_path = os.path.join(root, fname)
-                    print(f"\n➡️  File: {full_path}")
-                    workflow = TranslateWorkflow(config, secret, input_file=full_path)
-                    workflow.run()
-        elif choice == '2':
-            print(f"\n🔍 BẮT ĐẦU WORKFLOW: PHÂN TÍCH NGỮ CẢNH")
-            input_dir = config['active_task'].get('input_dir')
-            if not input_dir:
-                raise ValueError("Thiếu 'input_dir' trong config.active_task")
-            input_dir = _resolve_path(input_dir)
-            if not os.path.isdir(input_dir):
-                raise FileNotFoundError(f"Không tìm thấy thư mục input_dir: {input_dir}")
-            print(f"📁 Thư mục nguồn: {input_dir}")
+        mode_translate = (choice == '1')
+        print("\n🚀 BẮT ĐẦU WORKFLOW:" + (" DỊCH THUẬT" if mode_translate else " PHÂN TÍCH NGỮ CẢNH"))
 
-            for root, _dirs, files in os.walk(input_dir):
-                for fname in files:
-                    if not fname.lower().endswith(('.yml', '.yaml')):
-                        continue
-                    full_path = os.path.join(root, fname)
-                    print(f"\n➡️  File: {full_path}")
-                    workflow = AnalyzeWorkflow(config, secret, input_file=full_path)
-                    workflow.run()
+        input_dir = config['active_task'].get('input_dir')
+        if not input_dir:
+            raise ValueError("Thiếu 'input_dir' trong config.active_task")
+        input_dir = _resolve_path(input_dir)
+        if not os.path.isdir(input_dir):
+            raise FileNotFoundError(f"Không tìm thấy thư mục input_dir: {input_dir}")
+        print(f"📁 Thư mục nguồn: {input_dir}")
+
+        all_files = _collect_yaml_files(input_dir)
+        if not all_files:
+            print("⚠️ Không tìm thấy file YAML nào.")
+            return True
+
+        print(f"📊 Tổng số file: {len(all_files)}")
+
+        worker_threads = config['translate_api'].get('worker_threads', 1)
+        worker_threads = max(1, int(worker_threads))
+        print(f"🧵 Số worker threads: {worker_threads}")
+
+        q: queue.Queue[str] = queue.Queue()
+        for f in all_files:
+            q.put(f)
+
+        q_lock = threading.Lock()
+        print_lock = threading.Lock()
+        results = {
+            'processed': 0,
+            'failed': 0
+        }
+
+        def worker(worker_id: int):
+            while True:
+                try:
+                    path = q.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    with print_lock:
+                        print(f"➡️  [T{worker_id}] File: {path}")
+                    if mode_translate:
+                        wf = TranslateWorkflow(config, secret, input_file=path)
+                    else:
+                        wf = AnalyzeWorkflow(config, secret, input_file=path)
+                    wf.run()
+                    with q_lock:
+                        results['processed'] += 1
+                except Exception as e:
+                    with print_lock:
+                        print(f"❌ [T{worker_id}] Lỗi file {path}: {e}")
+                    with q_lock:
+                        results['failed'] += 1
+                finally:
+                    q.task_done()
+
+        threads: List[threading.Thread] = []
+        for i in range(worker_threads):
+            t = threading.Thread(target=worker, args=(i+1,), daemon=True)
+            t.start()
+            threads.append(t)
+
+        q.join()
+        for t in threads:
+            t.join()
+
+        print("\n📊 TỔNG KẾT FILE-LEVEL:")
+        print(f"   ✅ Thành công: {results['processed']}")
+        print(f"   ❌ Thất bại:  {results['failed']}")
+        return results['failed'] == 0
+
     except Exception as e:
         print(f"❌ Lỗi trong quá trình thực thi: {e}")
         return False
-    
-    return True
 
 def main():
     """Hàm main chính."""

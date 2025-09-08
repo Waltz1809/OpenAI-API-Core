@@ -11,6 +11,7 @@ translate_api:
   thinking_budget: 2000
   delay: 45
   max_retries: 5  # Số lần retry tự động cho các segment lỗi
+  worker_threads: 3  # Số lượng thread xử lý song song các file YAML
 
 paths:
   output_trans: "file_output"
