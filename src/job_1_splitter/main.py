@@ -15,17 +15,46 @@ import datetime
 from typing import List, Dict
 
 
-def load_config(config_path: str = "config.yml") -> Dict:
-    """Load configuration from YAML file."""
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            return yaml.safe_load(f)
-    except:
-        return {
-            'paths': {'input': '0_markdown_exports', 'output': 'input', 'logs': 'logs'},
-            'processing': {'segment_length': 25000},
-            'logging': {'enable_logging': True, 'log_level': 'INFO', 'max_log_size_mb': 10}
-        }
+REQUIRED_KEYS = [
+    ('paths', 'input'),
+    ('paths', 'output'),
+    ('paths', 'logs'),
+    ('processing', 'segment_length'),
+    ('logging', 'enable_logging'),
+    ('logging', 'log_level'),
+    ('logging', 'max_log_size_mb'),
+]
+
+
+def validate_config(cfg: Dict):
+    missing = []
+    for section, key in REQUIRED_KEYS:
+        if section not in cfg or key not in cfg[section]:
+            missing.append(f"{section}.{key}")
+    if missing:
+        raise ValueError("Missing required config keys: " + ", ".join(missing))
+    # Basic type / value checks
+    if not isinstance(cfg['processing']['segment_length'], int) or cfg['processing']['segment_length'] <= 0:
+        raise ValueError("processing.segment_length must be positive int")
+    if cfg['logging']['log_level'].upper() not in {'DEBUG','INFO','WARNING','ERROR','CRITICAL'}:
+        raise ValueError("logging.log_level invalid")
+
+
+def load_config(config_path: str | None = None) -> Dict:
+    """Load a single YAML config strictly; fail fast on errors/missing keys.
+
+    If config_path not provided, uses config.yml alongside this script.
+    """
+    script_dir = pathlib.Path(__file__).resolve().parent
+    path = pathlib.Path(config_path) if config_path else (script_dir / 'config.yml')
+    if not path.is_file():
+        raise FileNotFoundError(f"Config file not found: {path}")
+    with open(path, 'r', encoding='utf-8') as f:
+        data = yaml.safe_load(f)
+    if not isinstance(data, dict):
+        raise ValueError("Config root must be a mapping/dict")
+    validate_config(data)
+    return data
 
 
 def setup_logging(config: Dict, project_root: pathlib.Path) -> logging.Logger:

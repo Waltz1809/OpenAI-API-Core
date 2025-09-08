@@ -21,19 +21,20 @@ class AnalyzeWorkflow:
         self.config = config
         self.secret = secret
         self.processor = YamlProcessor()
-
-        # Setup API client cho context analysis
-        self.client = AIClientFactory.create_client(config['context_api'], secret)
+        # Setup API client cho context analysis (reuses translate_api settings)
+        self.client = AIClientFactory.create_client(config['translate_api'], secret)
 
         # Load prompt
         self.prompt = self._load_prompt(config['paths']['context_prompt_file'])
 
-        # Setup paths
-        self.input_file = input_file or config['active_task'].get('source_yaml_file') or ''
+        # Validate & set input
+        if not input_file:
+            raise ValueError("AnalyzeWorkflow now requires explicit input_file (legacy source_yaml_file removed).")
+        self.input_file = input_file
         self.base_name = self.processor.get_base_name(self.input_file)
 
-        # Get SDK code from factory
-        self.sdk_code = AIClientFactory.get_sdk_code(config['context_api'])
+        # Get SDK code from factory (based on translate_api now)
+        self.sdk_code = AIClientFactory.get_sdk_code(config['translate_api'])
 
         # Output base directory override (to maintain parallel directory structure)
         context_subdir = output_base_override or config['paths']['context_dir']
@@ -124,14 +125,14 @@ class AnalyzeWorkflow:
         for idx, segment in enumerate(segments):
             q.put((idx, segment))
             result_dict[idx] = None
-        
+
         # Threading config
-        concurrent_requests = self.config['context_api']['concurrent_requests']
+        concurrent_requests = self.config['translate_api'].get('concurrent_requests', 1)
         num_threads = min(concurrent_requests, len(segments))
         threads = []
-        
+
         print(f"🔧 Sử dụng {num_threads} threads đồng thời...")
-        
+
         # Tạo và chạy threads
         for _ in range(num_threads):
             t = threading.Thread(
@@ -141,17 +142,17 @@ class AnalyzeWorkflow:
             t.daemon = True
             t.start()
             threads.append(t)
-        
+
         # Đợi hoàn thành
         for t in threads:
             t.join()
-        
+
         # Thu thập kết quả
         results = []
         for idx in sorted(result_dict.keys()):
             if result_dict[idx] is not None:
                 results.append(result_dict[idx])
-        
+
         return results
     
     def _analysis_worker(self, q: queue.Queue, result_dict: Dict, 
@@ -198,8 +199,8 @@ class AnalyzeWorkflow:
                 
                 q.task_done()
                 
-                # Delay để tránh rate limit
-                time.sleep(self.config['context_api'].get('delay', 1))
+                # Delay để tránh rate limit (reuse translate_api.delay)
+                time.sleep(self.config['translate_api'].get('delay', 1))
                 
             except queue.Empty:
                 break

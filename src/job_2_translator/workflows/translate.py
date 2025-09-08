@@ -35,10 +35,10 @@ class TranslateWorkflow:
         self.title_prompt = self._load_prompt(config['paths']['title_prompt_file'])
         
         # Setup paths
-        if input_file:
-            self.input_file = input_file
-        else:
-            self.input_file = config['active_task'].get('source_yaml_file') or ''
+        # Explicit input file is required; legacy source_yaml_file fallback removed
+        if not input_file:
+            raise ValueError("TranslateWorkflow now requires explicit input_file (legacy source_yaml_file removed).")
+        self.input_file = input_file
         self.base_name = self.processor.get_base_name(self.input_file)
         
         # Get SDK code from factory
@@ -218,53 +218,38 @@ class TranslateWorkflow:
     def _translate_content(self, segments: List[Dict]) -> Tuple[List[Dict], List[str]]:
         """Dịch content của segments bằng threading. Trả về (segments, failed_ids)."""
         q = queue.Queue()
-        result_dict = {}
+        result_dict: Dict[int, Dict | None] = {}
         lock = threading.Lock()
-        failed_ids: List[str] = []
-        
-        # Đưa segments vào queue
+        self._failed_ids: List[str] = []  # reset collector
+
         for idx, segment in enumerate(segments):
             q.put((idx, segment))
             result_dict[idx] = None
-        
-        # Threading config
+
         concurrent_requests = self.config['translate_api']['concurrent_requests']
-        num_threads = min(concurrent_requests, len(segments))
-        threads = []
-        
+        num_threads = min(concurrent_requests, len(segments)) or 1
         print(f"🔧 Sử dụng {num_threads} threads đồng thời...")
-        
-        # Tạo và chạy threads
+
+        threads: List[threading.Thread] = []
         for _ in range(num_threads):
-            t = threading.Thread(
-                target=self._content_worker,
-                args=(q, result_dict, lock, len(segments))
-            )
+            t = threading.Thread(target=self._content_worker, args=(q, result_dict, lock, len(segments)))
             t.daemon = True
             t.start()
             threads.append(t)
-        
-        # Đợi hoàn thành
+
         for t in threads:
             t.join()
-        
-        # Thu thập kết quả
-        results = []
-        for idx in sorted(result_dict.keys()):
-            seg = result_dict[idx]
-            if seg is not None:
-                results.append(seg)
-            else:
-                # Collect failed id (original segment id accessible from queue entries stored earlier)
-                pass  # already tracked in worker
-        return results, failed_ids
+
+        results = [result_dict[i] for i in sorted(result_dict.keys()) if result_dict[i] is not None]
+        return results, list(self._failed_ids)
     
     def _content_worker(self, q: queue.Queue, result_dict: Dict, 
                        lock: threading.Lock, total_segments: int):
         """Worker thread để dịch content."""
-        while not q.empty():
+        delay = self.config['translate_api'].get('delay', 1)
+        while True:
             try:
-                idx, segment = q.get(block=False)
+                idx, segment = q.get_nowait()
                 segment_id = segment['id']
                 
                 with lock:
@@ -304,10 +289,7 @@ class TranslateWorkflow:
                         self._failed_ids.append(segment_id)
                 
                 q.task_done()
-                
-                # Delay để tránh rate limit
-                time.sleep(self.config['translate_api'].get('delay', 1))
-                
+                time.sleep(delay)
             except queue.Empty:
                 break
     

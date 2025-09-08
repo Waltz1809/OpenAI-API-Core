@@ -5,40 +5,44 @@ Chương trình dịch thuật sử dụng AI APIs (OpenAI, Gemini, Vertex) vớ
 ## Tính năng
 
 - ✅ **Translate**: Dịch cả content và title trong 1 lần chạy
-- ✅ **Auto-Retry tích hợp**: Tự động thử lại segments lỗi sau dịch  
+- ✅ **Auto-Retry tích hợp**: Tự động thử lại segments lỗi trong cùng workflow (không còn module retry riêng)
 - ✅ **Context Analysis**: Phân tích ngữ cảnh văn bản
 - ✅ **Multi-provider**: Hỗ trợ OpenAI, Gemini, Vertex AI (tách riêng clients)
 - ✅ **Smart logging**: Naming convention `ddmmyy_giờ_SDK_tên.log`
 - ✅ **Progress reports**: Báo cáo tiến độ tự động
 - ✅ **Threading**: Xử lý đồng thời để tăng tốc
-<!-- Chapter filtering removed -->
 
 ## Cài đặt
 
 1. **Clone repository**
 ```bash
+# Ví dụ
 git clone <repo_url>
-cd dich_cli
+cd OpenAI-API-Core/src/job_2_translator
 ```
 
-2. **Cài đặt dependencies**
+2. **Cài đặt dependencies** (tối thiểu)
 ```bash
 pip install openai google-genai pyyaml
 ```
 
 3. **Setup credentials**
 ```bash
-# Copy template từ dich_cli/ lên thư mục gốc và điền API keys
-cp dich_cli/secret_template.yml secrets.yml
-# Chỉnh sửa secrets.yml với API keys của bạn
+# Tạo secrets.yml ở repo root (cùng cấp src/)
+# Ví dụ tối giản:
+# openai:
+#   - api_key: sk-xxx
+# gemini:
+#   - api_key: AIza-xxx
+# vertex:
+#   - project_id: your-project
+#     location: us-central1
+#     access_token: ya29.xxx
 ```
 
 4. **Cấu hình**
 ```bash
-# Chỉnh sửa config.yml theo nhu cầu
-# - Đường dẫn file input
-# - Model settings cho từng workflow
-# - Output directories
+# Chỉnh sửa config.yml theo nhu cầu (nằm ngay trong thư mục job_2_translator)
 ```
 
 ## Sử dụng
@@ -57,168 +61,106 @@ python main.py
 
 ### Workflow tiêu biểu
 
-1. **Dịch lần đầu**:
+1. Dịch lần đầu:
+   - Đặt YAML vào thư mục được chỉ định bởi `active_task.input_dir`
    - Chọn `1` (Translate)
-   - Chương trình dịch cả content và title
-   - Kiểm tra log để xem segments thất bại
+   - Chương trình dịch cả content và (nếu bật) title
 
-2. **Retry tự động**:
-  - Sau khi dịch xong, các segments lỗi sẽ được retry ngay trong cùng workflow
-  - Điều chỉnh số lần bằng `translate_api.max_retries`
+2. Retry tự động:
+   - Diễn ra ngay trong workflow cho các segment lỗi tới `translate_api.max_retries`
 
-3. **Phân tích context**:
-  - Chọn `2` ở menu
-  - Tạo file phân tích ngữ cảnh riêng
+3. Phân tích context:
+   - Chọn `2` ở menu
 
-## Cấu trúc file
-
-### Input YAML format
+## Cấu trúc Input YAML
 ```yaml
 - id: Volume_1_Chapter_1_Segment_1
-  title: 第一章 与女酒鬼共度一整晚  
+  title: 第一章 与女酒鬼共度一整晚
   content: |-
     中文内容...
-    
+
     多个段落...
 ```
 
-### Output structure
-```
-Dich/                   # Thư mục gốc  
-├── secrets.yml         # API credentials (gitignored)
-└── dich_cli/           # Chương trình chính
-  ├── config.yml      # Cấu hình chính (YAML)
-    ├── core/           # Core modules
-    │   ├── openai_client.py   # OpenAI client
-    │   ├── gemini_client.py   # Gemini client  
-    │   ├── vertex_client.py   # Vertex AI client
-    │   ├── ai_factory.py      # Client factory
-    │   ├── yaml_processor.py  # YAML handler
-    │   └── logger.py          # Smart logger
-    ├── workflows/      # Workflow implementations
-    ├── output/
-    │   ├── translation/ # File dịch
-    │   └── context/     # File phân tích context + log
-    ├── logs/
-    │   └── translation/ # Log dịch thuật  
-    └── reports/        # Báo cáo tiến độ
-```
+## Naming convention
+- Log files: `ddmmyy_HHMM_SDK_filename.log`
+- Output files: `ddmmyy_HHMM_SDK_filename.yaml`
+- SDK codes: `gmn` (Gemini), `oai` (OpenAI), `vtx` (Vertex AI)
 
-### Naming convention
-- **Log files**: `ddmmyy_HHMM_SDK_filename.log`
-- **Output files**: `ddmmyy_HHMM_SDK_filename.yaml`
-- **SDK codes**: `gmn` (Gemini), `oai` (OpenAI), `vtx` (Vertex AI)
-
-## Cấu hình
-
-### config.yml structure
+## config.yml (rút gọn ví dụ)
 ```yaml
 active_task:
-  task_name: "Tên tác vụ"
-  source_yaml_file: "đường/dẫn/input.yaml"
+  task_name: "Dịch văn bản"
+  input_dir: "file_input/volume_1"
 
 translate_api:
   provider: gemini
-  model: gemini-2.5-flash
-  temperature: 0.7
-  concurrent_requests: 5
-  max_tokens: 4000
-  thinking_budget: 0
-  max_retries: 2
-  delay: 3
+  model: gemini-2.5-pro
+  temperature: 1.3
+  concurrent_requests: 10
+  max_tokens: 12000
+  thinking_budget: 2000
+  delay: 45
+  max_retries: 5
 
-context_api:
-  provider: vertex
-  model: gemini-2.5-flash
-  temperature: 0.5
-  concurrent_requests: 3
-  max_tokens: 1500
-  thinking_budget: 0
+
+paths:
+  output_trans: "file_output"
+  log_trans: "inventory/logs/translator"
+  context_dir: "inventory/context"
+  prompt_file: "inventory/prompt/prompt.txt"
+  title_prompt_file: "inventory/prompt/title_prompt.txt"
+  context_prompt_file: "inventory/prompt/context_prompt.txt"
 
 title_api:
   provider: gemini
   model: gemini-2.5-flash
-  temperature: 0.5
-  concurrent_requests: 2
-  max_tokens: 50
+  temperature: 1.3
+  concurrent_requests: 20
+  max_tokens: 100
   thinking_budget: 0
-  delay: 3
+  delay: 0
+
+title_translation:
+  enabled: true
+
+cleaner:
+  enabled: true
+  remove_thinking_blocks: true
 ```
 
-### secrets.yml structure (ở thư mục gốc)  
+## secrets.yml (đa-key hỗ trợ rotation)
 ```yaml
-openai_api_key: "sk-..."
-openai_base_url: "https://api.openai.com/v1"
-gemini_api_key: "AIza..."
-vertex_project_id: "your-vertex-project"
-vertex_location: "global"
+gemini:
+  - api_key: AIza...
+  - api_key: AIza...
+openai:
+  - api_key: sk-...
+vertex:
+  - project_id: your-project
+    location: us-central1
+    access_token: ya29....
 ```
 
-### Provider Selection
-Chỉ cần set field `provider` trong mỗi API config:
-- **OpenAI**: `"provider": "openai"`
-- **Gemini**: `"provider": "gemini"`
-- **Vertex AI**: `"provider": "vertex"`
-
-## Tính năng nâng cao
-
-### Title Translation
-```json
-"title_translation": {
-  "enabled": true
-},
-
-"title_api": {
-  "provider": "gemini",
-  "model": "gemini-2.5-flash",
-  "temperature": 0.5,
-  "concurrent_requests": 2,
-  "max_tokens": 50,
-  "thinking_budget": 0,
-  "delay": 3
-}
+## Content Cleaning
+```yaml
+cleaner:
+  enabled: true
+  remove_thinking_blocks: true
 ```
 
-**Lưu ý**: Title có API config riêng để tối ưu token và tránh thinking thừa thãi.
+## Tips
+- Giảm `concurrent_requests` nếu gặp rate limit.
+- Tắt thinking bằng `thinking_budget: 0` khi không cần reasoning.
+- Dùng nhiều key Gemini để phân tải.
 
-### Content Cleaning
-```json  
-"cleaner": {
-  "enabled": true,
-  "remove_thinking_blocks": true
-}
-```
+## Troubleshooting nhanh
+| Vấn đề | Giải pháp |
+|--------|-----------|
+| Không thấy secrets | Tạo `secret.yml` hoặc `secrets.yml` ở repo root |
+| Rate limit | Giảm concurrent / tăng delay |
+| Model lỗi | Đổi provider hoặc model khác |
 
-## Troubleshooting
-
-### Lỗi thường gặp
-
-1. **"File secrets.yml không tồn tại"**
-  - Copy `dich_cli/secret_template.yml` thành `secrets.yml` ở thư mục gốc
-  - Điền đúng API keys
-
-2. **"Prompt bị chặn"**
-   - Đối với Gemini: Safety settings đã được tắt hết
-   - Thử model khác hoặc provider khác
-
-3. **Rate limit**
-   - Giảm `concurrent_requests` trong config
-   - Tăng `delay` giữa các requests
-
-4. **Thinking budget lỗi**
-   - Chỉ có Gemini 2.5 series hỗ trợ
-   - Set `thinking_budget: 0` để tắt
-
-### Performance tips
-
-- Gemini 2.5-flash: Nhanh, rẻ, chất lượng tốt
-- OpenAI GPT-4o-mini: Backup tốt cho retry
-- Concurrent requests: 3-5 cho Gemini, 5-10 cho OpenAI
-- Thinking budget: 0 (tắt) để tiết kiệm token
-
-## Support
-
-Nếu gặp vấn đề, kiểm tra:
-1. File log chi tiết trong `logs/`
-2. Báo cáo tiến độ trong `reports/`
-3. Config và secret files đúng format
+## Ghi chú dọn dẹp
+- Legacy `retry.py` đã được gỡ (stub còn lại sẽ bị xóa an toàn khi không còn import ngoài).
+- Legacy `config.json` sẽ bị xóa (không còn sử dụng, thay bằng YAML).

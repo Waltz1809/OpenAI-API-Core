@@ -5,3 +5,5 @@ file_input/*
 file_output/*
 src/job_2_translator/core/__pycache__
 src/job_2_translator/workflows/__pycache__
+inventory/logs/translator/*
+src/inventory/logs/splitter/*

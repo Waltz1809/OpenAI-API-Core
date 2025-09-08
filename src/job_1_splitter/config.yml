@@ -4,12 +4,12 @@
 # Input/Output Settings  
 paths:
   input: "0_markdown_exports"     # Input directory (relative to project root)
-  output: "input"                 # Output directory (relative to project root)
+  output: "file_input"                 # Output directory (relative to project root)
   logs: "src/inventory/logs/splitter"  # Log files directory (relative to project root)
 
 # Processing Settings
 processing:
-  segment_length: 25000           # Number of characters per segment
+  segment_length: 30000           # Number of characters per segment
 
 # Logging Settings
 logging:
