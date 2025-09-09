@@ -1,6 +1,6 @@
 active_task:
   task_name: "Dịch văn bản"
-  input_dir: "file_input/volume_1"
+  input_dir: "file_input"
 
 translate_api:
   provider: gemini
@@ -9,7 +9,7 @@ translate_api:
   concurrent_requests: 10
   max_tokens: 15000
   thinking_budget: 2000
-  delay: 45
+  delay: 60
   max_retries: 5  # Số lần retry tự động cho các segment lỗi
   worker_threads: 3  # Số lượng thread xử lý song song các file YAML
 

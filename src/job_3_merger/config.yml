@@ -1,0 +1,6 @@
+paths:
+  input: "file_output"                   # Root directory containing YAML segment files
+  output: "file_md"                       # Destination root for merged Markdown
+
+processing:
+  write_title_header: true            # Write '## <title>' at top of the output file

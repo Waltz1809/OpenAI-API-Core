@@ -1,0 +1,13 @@
+# Uploader configuration (simplified for volume creation)
+
+credentials:
+  username: ""
+  password: ""
+
+series:
+  novel_id: ""        # Required
+  # base_url: "https://docln.sbs"   # Optional override (defaults to docln.sbs)
+
+paths:
+  # Folder containing volume directories; each subfolder = a volume; files inside are chapters
+  input: "file_md"

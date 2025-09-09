@@ -7,3 +7,6 @@ src/job_2_translator/core/__pycache__
 src/job_2_translator/workflows/__pycache__
 inventory/logs/translator/*
 src/inventory/logs/splitter/*
+inventory/logs/*
+src/job_4_uploader/core/__pycache__
+file_md/*
