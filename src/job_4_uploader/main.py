@@ -63,7 +63,7 @@ def load_config() -> Dict:
 # ----------------------
 # Logging
 # ----------------------
-def setup_logging(name: str = 'uploader', level: str = 'INFO') -> logging.Logger:
+def setup_logging(name: str = 'uploader', level: str = 'INFO', log_dir_override: str | None = None) -> logging.Logger:
     logger = logging.getLogger(name)
     if logger.handlers:
         return logger
@@ -74,9 +74,13 @@ def setup_logging(name: str = 'uploader', level: str = 'INFO') -> logging.Logger
     ch.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
     logger.addHandler(ch)
 
-    # File under inventory/logs
+    # File
     try:
-        log_dir = PROJECT_ROOT / 'inventory' / 'logs'
+        if log_dir_override:
+            raw_path = pathlib.Path(log_dir_override)
+            log_dir = raw_path if raw_path.is_absolute() else (PROJECT_ROOT / raw_path)
+        else:
+            log_dir = PROJECT_ROOT / 'inventory' / 'logs'
         log_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
         fh = logging.FileHandler(log_dir / f'uploader_{ts}.log', encoding='utf-8')
@@ -115,7 +119,10 @@ def resolve_path_from_repo(path_str: str) -> str:
 # ----------------------
 async def _amain() -> None:
     cfg = load_config()
-    logger = setup_logging()
+    # Pre-read config for log path
+    paths_section = (cfg.get('paths') or {})
+    log_path_cfg = (paths_section.get('log') or '').strip() or None
+    logger = setup_logging(log_dir_override=log_path_cfg)
     logger.info('Starting uploader - create volumes flow')
 
     series = cfg.get('series') or {}

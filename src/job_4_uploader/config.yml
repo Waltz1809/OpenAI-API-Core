@@ -11,3 +11,5 @@ series:
 paths:
   # Folder containing volume directories; each subfolder = a volume; files inside are chapters
   input: "file_md"
+  # Optional custom log directory (relative or absolute). If empty, defaults to inventory/logs
+  log: "inventory/logs/uploader"
