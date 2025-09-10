@@ -44,11 +44,32 @@ class TranslateWorkflow:
         # Get SDK code from factory
         self.sdk_code = AIClientFactory.get_sdk_code(config['translate_api'])
         
-        # Output files
+        # Output files with forced directory mirroring of input tree
         base_output_dir = output_base_override or config['paths']['output_trans']
+        input_root_cfg = config['active_task'].get('input_dir', '')
+        if input_root_cfg and not os.path.isabs(input_root_cfg):
+            # cwd is project root (set in main), so join
+            input_root_abs = os.path.abspath(input_root_cfg)
+        else:
+            input_root_abs = input_root_cfg or ''
+
+        rel_dir = ''
+        try:
+            if input_root_abs and os.path.commonpath([input_root_abs, os.path.abspath(self.input_file)]) == os.path.abspath(input_root_abs):
+                rel_path = os.path.relpath(self.input_file, input_root_abs)
+                rel_dir = os.path.dirname(rel_path)
+        except Exception:
+            rel_dir = ''  # fallback: ignore mirroring if any issue
+
+        # Construct mirrored output directory
+        if rel_dir and rel_dir not in ('.', ''):
+            mirrored_output_dir = os.path.join(base_output_dir, rel_dir)
+        else:
+            mirrored_output_dir = base_output_dir
+
         self.output_file = self.processor.create_output_filename(
             self.input_file,
-            base_output_dir,
+            mirrored_output_dir,
             self.sdk_code
         )
         
