@@ -122,11 +122,20 @@ class TranslateWorkflow:
                     print("⚠️ Retry bị tắt (max_retries=0)")
 
             # 4. Dịch titles sau (nếu enabled)
-            translated_titles = {}
-            if self.config['title_translation']['enabled'] and self.title_client:
-                print("\n🏷️ Đang dịch titles...")
-                translated_titles = self._translate_titles(segments)
-                print(f"✅ Đã dịch {len(translated_titles)} titles")
+                translated_titles = {}
+                if self.config['title_translation']['enabled'] and self.title_client:
+                    per_file = self.config['title_translation'].get('per_file', False)
+                    if per_file:
+                        print("\n🏷️ Dịch title cho toàn bộ file (per_file=true)...")
+                        translated_titles = self._translate_file_title_once(segments)
+                        if translated_titles:
+                            print("✅ Đã dịch title file 1 lần")
+                        else:
+                            print("⚠️ Không tìm thấy title hợp lệ để dịch (giữ nguyên)")
+                    else:
+                        print("\n🏷️ Đang dịch titles từng chapter...")
+                        translated_titles = self._translate_titles(segments)
+                        print(f"✅ Đã dịch {len(translated_titles)} titles")
             
             # 5. Merge titles vào segments
             if translated_titles:
@@ -214,6 +223,40 @@ class TranslateWorkflow:
                 translated_titles[chapter_id] = original_title
         
         return translated_titles
+
+    def _translate_file_title_once(self, segments: List[Dict]) -> Dict[str, str]:
+        """Translate a single representative title for the whole file.
+
+        Strategy:
+          - Pick the first non-empty title among segments.
+          - If none, return empty mapping.
+          - Use title client once; apply to all segments by returning mapping for every chapter id.
+        """
+        if not segments:
+            return {}
+        # Find first non-empty original title
+        first_title = next((s.get('title', '').strip() for s in segments if s.get('title', '').strip()), '')
+        if not first_title:
+            return {}
+        translated: Dict[str, str] = {}
+        try:
+            content, token_info = self.title_client.generate_content(  # type: ignore
+                self.title_prompt,
+                first_title
+            )
+            unified_title = content.strip().replace('"', '').replace('\\n', '\n')
+            # Map all chapter ids to this unified title
+            unique_chapters = self.processor.get_unique_chapters(segments)
+            for chap_id in unique_chapters.keys():
+                translated[chap_id] = unified_title
+            # Log as one entry
+            self.logger.log_segment(
+                f"Title_FILE", "THÀNH CÔNG", token_info=token_info
+            )
+        except Exception as e:
+            self.logger.log_segment("Title_FILE", "THẤT BẠI", str(e))
+            return {}
+        return translated
     
     def _translate_content(self, segments: List[Dict]) -> Tuple[List[Dict], List[str]]:
         """Dịch content của segments bằng threading. Trả về (segments, failed_ids)."""

@@ -5,7 +5,7 @@ api: https://www.baka-tsuki.org/project/api.php
 root_page: Saijaku_Muhai_no_Bahamut  # used if namespace_name is not set
 output:
   # Directory (relative) to store raw .wiki exports
-  wiki_dir: wiki_exports
+  wiki_dir: 0_wiki_exports
   # Optional explicit folder name (else derived from root_page)
   # root_dir_name: horizon_project
   

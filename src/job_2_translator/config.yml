@@ -1,6 +1,6 @@
 active_task:
   task_name: "Dịch văn bản"
-  input_dir: "file_input"
+  input_dir: "2_input_segment"   # Thư mục chứa các file YAML đã được chia nhỏ
 
 translate_api:
   provider: gemini
@@ -14,7 +14,7 @@ translate_api:
   worker_threads: 3  # Số lượng thread xử lý song song các file YAML
 
 paths:
-  output_trans: "file_output"
+  output_trans: "3_output_segment"  # Thư mục lưu các file YAML đã dịch
   log_trans: "inventory/logs/translator"
   context_dir: "inventory/context"
   prompt_file: "inventory/prompt/prompt.txt"
@@ -32,6 +32,7 @@ title_api:
 
 title_translation:
   enabled: true
+  per_file: true   # If true, translate title once per file and apply to all segments (overrides per-chapter)
 
 
 cleaner:

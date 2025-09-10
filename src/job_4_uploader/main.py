@@ -38,10 +38,13 @@ os.chdir(PROJECT_ROOT)
 sys.path.append(str(_script_dir() / 'core'))
 
 # Local imports
-from core.step1_session import start_session_and_login_interactive  # type: ignore
-from core.step2_3_series import create_volumes_and_get_book_ids, create_volume_and_get_book_id, discover_volumes  # type: ignore
-from core.step4_chapter import create_chapters_for_volume_dir  # type: ignore
-from core.browser import close_all  # type: ignore
+from core.steps import (
+    start_session_and_login_interactive,  # type: ignore
+    discover_volumes,                     # type: ignore
+    create_volume_and_get_book_id,        # type: ignore
+    create_chapters_for_volume_dir,       # type: ignore
+    close_all,                            # type: ignore
+)
 
 
 # ----------------------

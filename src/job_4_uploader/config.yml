@@ -10,6 +10,6 @@ series:
 
 paths:
   # Folder containing volume directories; each subfolder = a volume; files inside are chapters
-  input: "file_md"
+  input: "4_output_md"   # Relative to project root or absolute path
   # Optional custom log directory (relative or absolute). If empty, defaults to inventory/logs
   log: "inventory/logs/uploader"
