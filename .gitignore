@@ -6,6 +6,7 @@ inventory/logs/translator/*
 inventory/logs/splitter/*
 inventory/logs/uploader/*
 0_wiki_exports/*
+0_epub/*
 1_input_md/*
 2_input_segment/*
 3_output_segment/*
