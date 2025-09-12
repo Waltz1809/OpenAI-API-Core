@@ -1,0 +1,34 @@
+# Imgbox batch uploader config
+
+# Input: list of image paths or URLs
+input:
+  - "1.png"
+  - "2.png"
+
+# Output YAML file where results are saved
+output_file: "uploaded.yml"
+
+# Album / gallery name
+album_title: "My Batch Upload"
+
+# Content type: safe | sketchy | nsfw
+content_type: "adult"
+
+# Thumbnail size (options from Imgbox form: 100c, 150c, 200c, 250c, 300c, 350c, etc.)
+thumbnail_size: "350c"
+
+# Enable comments on uploads (true/false)
+comments_enabled: false
+
+# Optional authentication cookie (to upload into your account)
+# Paste the full cookie string, e.g. "_imgbox_session=abc123..."
+auth_cookie: "NUtibVdVL2hVSi91eTJidWxyYTdyZmlpTDhyUWd4ellDTGhUazI4S2V0SlozRDk3OHNkZkxXVmdJQ2FQbHZPa1pxWnJSVStycHpoaHZjZWNzYTY2WlpsVDlBUmRqTzBYeEZKR00wWUJ1RHZ6NHIxNit4Vmo5cDJqaUZQajRJTC8vZFJjdFdoZy90QXdDTGtLSHVHS3UwYU1IV2F0NldLSDU2c3lOSG9YQ3NMb3dGcjMrM1VLQktTL3BWaDZhNXNXdnBuMEl6Zzg5ajc1MlVzeStNcUFiNkh3bHo0OXgvV3hhU0Q5QzdDSlhUNTJpamg0VmlETDNZc1JYSjJSYUVnRlJyenF0TVN2Lzhwa3FKSWVERWtscUlvYnA4UVlkYkpSQUxhNFczZ05zeklQNXNxRkZzWnp5RUdKNWpsMHlNT0gxUEIzOXFpVXhwWGRlQUU0YTNuTzZRPT0tLU1vTG9zYitYajdoZUdIRngyZXhmK3c9PQ%3D%3D--a290055adab2d69a91c9f36fed0e3f454221d104"           # your _imgbox_session cookie or null
+
+# Batch settings
+batch_size: 10
+delay: 2
+timeout: 30
+
+# Logging verbosity
+logger: true
+
