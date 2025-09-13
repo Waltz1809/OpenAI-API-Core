@@ -143,25 +143,35 @@ class TranslateWorkflow:
                     print("⚠️ Retry bị tắt (max_retries=0)")
 
             # 4. Dịch titles sau (nếu enabled)
-                translated_titles = {}
-                if self.config['title_translation']['enabled'] and self.title_client:
-                    per_file = self.config['title_translation'].get('per_file', False)
-                    if per_file:
-                        print("\n🏷️ Dịch title cho toàn bộ file (per_file=true)...")
-                        translated_titles = self._translate_file_title_once(segments)
-                        if translated_titles:
-                            print("✅ Đã dịch title file 1 lần")
-                        else:
-                            print("⚠️ Không tìm thấy title hợp lệ để dịch (giữ nguyên)")
+            translated_titles = {}
+            if self.config['title_translation']['enabled'] and self.title_client:
+                per_file = self.config['title_translation'].get('per_file', False)
+                if per_file:
+                    print("\n🏷️ Dịch title cho toàn bộ file (per_file=true)...")
+                    translated_titles = self._translate_file_title_once(segments)
+                    if translated_titles:
+                        print("✅ Đã dịch title file 1 lần")
                     else:
-                        print("\n🏷️ Đang dịch titles từng chapter...")
-                        translated_titles = self._translate_titles(segments)
-                        print(f"✅ Đã dịch {len(translated_titles)} titles")
-            
+                        print("⚠️ Không tìm thấy title hợp lệ để dịch (giữ nguyên)")
+                else:
+                    print("\n🏷️ Đang dịch titles từng chapter...")
+                    translated_titles = self._translate_titles(segments)
+                    print(f"✅ Đã dịch {len(translated_titles)} titles")
+
             # 5. Merge titles vào segments
             if translated_titles:
-                print("\n🔄 Đang merge titles...")
-                self._merge_titles(translated_segments, translated_titles)
+                # Log the translated title for this file
+                translated_title = next(iter(translated_titles.values())) if translated_titles else None
+                print(f"\n🔄 Đang merge titles...")
+                if translated_title:
+                    print(f"🏷️ Translated file title (API response): {translated_title}")
+                    self.logger.log_segment("File_Title", "TITLE_TRANSLATED", translated_title)
+                self._merge_titles(translated_segments, translated_titles, per_file=per_file)
+
+
+                # Log the final title of each segment for debugging
+                for i, seg in enumerate(translated_segments):
+                    print(f"[Segment {i}] Final title: {seg.get('title')}")
             
             # 6. Save temp file trước
             temp_output_file = os.path.join(
@@ -199,23 +209,28 @@ class TranslateWorkflow:
             raise
     
     def _translate_titles(self, segments: List[Dict]) -> Dict[str, str]:
-        """Dịch titles của các chapters unique bằng title client riêng."""
-        # Lấy chapters unique
-        unique_chapters = self.processor.get_unique_chapters(segments)
-        
-        if not unique_chapters:
+        """Translate titles of each segment individually using the title client."""
+        if not segments:
             return {}
         
         translated_titles = {}
         title_delay = self.config['title_api'].get('delay', 3)
         
-        for chapter_id, original_title in unique_chapters.items():
+        for segment in segments:
+            seg_id = segment.get('id')
+            original_title = segment.get('title', '').strip()
+            
+            if not original_title:
+                # Nothing to translate → keep empty
+                translated_titles[seg_id] = original_title
+                continue
+            
             try:
-                print(f"🏷️ Dịch title: {chapter_id}")
+                print(f"🏷️ Dịch title cho segment {seg_id}...")
                 
                 if self.title_client is None:
-                    print(f"❌ Title client không được khởi tạo")
-                    translated_titles[chapter_id] = original_title
+                    print("❌ Title client không được khởi tạo")
+                    translated_titles[seg_id] = original_title
                     continue
                 
                 content, token_info = self.title_client.generate_content(
@@ -223,42 +238,44 @@ class TranslateWorkflow:
                     original_title
                 )
                 
-                # Clean title result
                 translated_title = content.strip().replace('"', '').replace('\\n', '\n')
-                translated_titles[chapter_id] = translated_title
+                translated_titles[seg_id] = translated_title
                 
                 self.logger.log_segment(
-                    f"Title_{chapter_id}", "THÀNH CÔNG", 
-                    token_info=token_info
+                    f"Title_{seg_id}", "THÀNH CÔNG", token_info=token_info
                 )
                 
-                # Delay cho title để tránh quota issues
-                time.sleep(title_delay)
+                time.sleep(title_delay)  # avoid quota issues
                 
             except Exception as e:
-                print(f"❌ Lỗi dịch title {chapter_id}: {e}")
+                print(f"❌ Lỗi dịch title {seg_id}: {e}")
                 self.logger.log_segment(
-                    f"Title_{chapter_id}", "THẤT BẠI", str(e)
+                    f"Title_{seg_id}", "THẤT BẠI", str(e)
                 )
-                # Giữ nguyên title gốc
-                translated_titles[chapter_id] = original_title
+                # Fallback: keep original
+                translated_titles[seg_id] = original_title
         
         return translated_titles
 
-    def _translate_file_title_once(self, segments: List[Dict]) -> Dict[str, str]:
-        """Translate a single representative title for the whole file.
 
-        Strategy:
-          - Pick the first non-empty title among segments.
-          - If none, return empty mapping.
-          - Use title client once; apply to all segments by returning mapping for every chapter id.
-        """
+    def _translate_file_title_once(self, segments: List[Dict]) -> Dict[str, str]:
+        """Translate one representative title and apply to all segments."""
         if not segments:
             return {}
-        # Find first non-empty original title
-        first_title = next((s.get('title', '').strip() for s in segments if s.get('title', '').strip()), '')
+        
+        # Pick the first non-empty original title
+        first_title = next(
+            (s.get('title', '').strip() for s in segments if s.get('title', '').strip()),
+            ''
+        )
+        print(f"[DEBUG] Extracted first_title before translation: '{first_title}'")
+        self.logger.log_segment("File_Title", "EXTRACTED_FIRST_TITLE", first_title)
+        
         if not first_title:
-            return {}
+            first_title = "No Title"
+            for seg in segments:
+                seg['title'] = first_title
+        
         translated: Dict[str, str] = {}
         try:
             content, token_info = self.title_client.generate_content(  # type: ignore
@@ -266,21 +283,25 @@ class TranslateWorkflow:
                 first_title
             )
             unified_title = content.strip().replace('"', '').replace('\\n', '\n')
-            # Map all chapter ids to this unified title
-            unique_chapters = self.processor.get_unique_chapters(segments)
-            for chap_id in unique_chapters.keys():
-                translated[chap_id] = unified_title
-            # Log as one entry
-            self.logger.log_segment(
-                f"Title_FILE", "THÀNH CÔNG", token_info=token_info
-            )
+            
+            # Apply to all segments (map by id)
+            for seg in segments:
+                seg_id = seg.get('id')
+                if seg_id:
+                    translated[seg_id] = unified_title
+            
+            # Log once
+            self.logger.log_segment("File_Title", "THÀNH CÔNG", token_info=token_info)
         except Exception as e:
-            self.logger.log_segment("Title_FILE", "THẤT BẠI", str(e))
+            self.logger.log_segment("File_Title", "THẤT BẠI", str(e))
             return {}
+        
         return translated
+
     
     def _translate_content(self, segments: List[Dict]) -> Tuple[List[Dict], List[str]]:
         """Dịch content của segments bằng threading. Trả về (segments, failed_ids)."""
+        from core.key_rotator import KeyRotator
         q = queue.Queue()
         result_dict: Dict[int, Dict | None] = {}
         lock = threading.Lock()
@@ -294,9 +315,26 @@ class TranslateWorkflow:
         num_threads = min(concurrent_requests, len(segments)) or 1
         print(f"🔧 Sử dụng {num_threads} threads đồng thời...")
 
+        # Setup key rotator and assign a client per thread
+        key_rotator = KeyRotator(self.secret)
+        provider = self.config['translate_api']['provider']
+        thread_clients = []
+        for i in range(num_threads):
+            key = key_rotator.get_next_key(provider)
+            thread_secret = self.secret.copy()
+            if key:
+                # Patch the API key for this thread
+                if provider == 'gemini':
+                    thread_secret['gemini_api_key'] = key.get('api_key')
+                elif provider == 'openai':
+                    thread_secret['openai_api_key'] = key.get('api_key')
+                # Add other providers as needed
+            client = AIClientFactory.create_client(self.config['translate_api'], thread_secret)
+            thread_clients.append(client)
+
         threads: List[threading.Thread] = []
-        for _ in range(num_threads):
-            t = threading.Thread(target=self._content_worker, args=(q, result_dict, lock, len(segments)))
+        for i in range(num_threads):
+            t = threading.Thread(target=self._content_worker, args=(q, result_dict, lock, len(segments), thread_clients[i]))
             t.daemon = True
             t.start()
             threads.append(t)
@@ -308,40 +346,40 @@ class TranslateWorkflow:
         return results, list(self._failed_ids)
     
     def _content_worker(self, q: queue.Queue, result_dict: Dict, 
-                       lock: threading.Lock, total_segments: int):
-        """Worker thread để dịch content."""
+                       lock: threading.Lock, total_segments: int, client):
+        """Worker thread để dịch content, mỗi thread dùng client riêng."""
         delay = self.config['translate_api'].get('delay', 1)
         while True:
             try:
                 idx, segment = q.get_nowait()
                 segment_id = segment['id']
-                
+
                 with lock:
                     processed = len([v for v in result_dict.values() if v is not None])
                     print(f"[{processed + 1}/{total_segments}] 📝 {segment_id}")
-                
+
                 try:
                     # Dịch content
                     user_prompt = f"\n\n{segment['content']}"
-                    
-                    content, token_info = self.client.generate_content(
+
+                    content, token_info = client.generate_content(
                         self.content_prompt,
                         user_prompt
                     )
-                    
+
                     # Tạo segment mới
                     translated_segment = {
                         'id': segment['id'],
                         'title': segment['title'],  # Sẽ được merge sau
                         'content': content
                     }
-                    
+
                     with lock:
                         result_dict[idx] = translated_segment
                         self.logger.log_segment(
                             segment_id, "THÀNH CÔNG", token_info=token_info
                         )
-                
+
                 except Exception as e:
                     with lock:
                         result_dict[idx] = segment  # mark attempted
@@ -351,24 +389,35 @@ class TranslateWorkflow:
                         if not hasattr(self, '_failed_ids'):
                             self._failed_ids = []
                         self._failed_ids.append(segment_id)
-                
+
                 q.task_done()
                 time.sleep(delay)
             except queue.Empty:
                 break
     
-    def _merge_titles(self, segments: List[Dict], translated_titles: Dict[str, str]):
-        """Merge translated titles vào segments."""
-        for segment in segments:
-            segment_id = segment.get('id', '')
-            
-            # Tìm chapter ID từ segment ID
-            chapter_match = self.processor.chapter_pattern.search(segment_id)
-            if chapter_match:
-                chapter_id = chapter_match.group(0)
-                
-                if chapter_id in translated_titles:
-                    segment['title'] = translated_titles[chapter_id]
+    def _merge_titles(self, segments: List[Dict], translated_titles: Dict[str, str], per_file: bool = False):
+        """Merge translated titles back into segments (supports per_file and per_segment)."""
+        if not translated_titles:
+            return
+        
+        if per_file:
+            # All values in translated_titles are identical → take one
+            unified_title = next(iter(translated_titles.values()))
+            for i, segment in enumerate(segments):
+                old_title = segment.get('title')
+                segment['title'] = unified_title
+                print(f"[Overwrite] Segment {i} title: '{old_title}' → '{unified_title}'")
+        else:
+            # Match by segment id
+            for i, segment in enumerate(segments):
+                seg_id = segment.get('id')
+                if seg_id in translated_titles:
+                    old_title = segment.get('title')
+                    new_title = translated_titles[seg_id]
+                    segment['title'] = new_title
+                    print(f"[Merge] Segment {i} ({seg_id}) title: '{old_title}' → '{new_title}'")
+
+
     
     def _clean_yaml_file(self, input_file: str, output_file: str):
         """Clean YAML file theo pattern của file cũ: temp -> final."""
