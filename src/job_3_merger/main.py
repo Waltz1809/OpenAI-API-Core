@@ -109,31 +109,31 @@ def _read_yaml_segments(path: pathlib.Path) -> List[Dict]:
 
 
 def _compose_markdown(segments: List[Dict], write_title_header: bool) -> Tuple[str, str]:
-	"""Return (title, markdown_text)."""
-	# Pick first non-empty title across segments
-	title = next((s.get('title', '').strip() for s in segments if s.get('title', '').strip()), 'Untitled')
+    """Return (title, markdown_text)."""
+    # Pick first non-empty title across segments
+    title = next((s.get('title', '').strip() for s in segments if s.get('title', '').strip()), 'Untitled')
 
-	# Sort by segment index if present; otherwise keep file order
-	try:
-		segments_sorted = sorted(segments, key=lambda s: _segment_index(str(s.get('id', ''))))
-	except Exception:
-		segments_sorted = segments
+    # Sort by segment index if present; otherwise keep file order
+    try:
+        segments_sorted = sorted(segments, key=lambda s: _segment_index(str(s.get('id', ''))))
+    except Exception:
+        segments_sorted = segments
 
-	parts: List[str] = []
-	if write_title_header and title:
-		parts.append(f"## {title}\n")
+    parts: List[str] = []
 
-	for seg in segments_sorted:
-		content = seg.get('content') or ''
-		# Ensure str and normalize newlines
-		content = str(content).replace('\r\n', '\n').replace('\r', '\n')
-		parts.append(content.strip())
+    # 🚫 Removed Markdown H2 header — filename already contains title
 
-	# Join with double newlines between segments
-	md = "\n\n".join(p for p in parts if p)
-	if not md.endswith("\n"):
-		md += "\n"
-	return title, md
+    for seg in segments_sorted:
+        content = seg.get('content') or ''
+        content = str(content).replace('\r\n', '\n').replace('\r', '\n')
+        parts.append(content.strip())
+
+    # Join with double newlines between segments
+    md = "\n\n".join(p for p in parts if p)
+    if not md.endswith("\n"):
+        md += "\n"
+    return title, md
+
 
 
 # ----------------------
