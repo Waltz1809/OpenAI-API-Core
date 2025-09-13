@@ -6,3 +6,4 @@ When translate title, notice:
     - Afterword: Lời bạt
     - Prologue: Mở đầu
     - Preface: Lời tựa
+    - Glossary: Thuật ngữ
