@@ -1,15 +1,18 @@
-# Uploader configuration (simplified for volume creation)
+# Uploader configuration
 
 credentials:
-  username: ""
-  password: ""
+  username: "Phamduytuan006@gmail.com"
+  password: "cocaiccc"
 
 series:
-  novel_id: ""        # Required
-  # base_url: "https://docln.sbs"   # Optional override (defaults to docln.sbs)
+  novel_id: "23258"        # Required
+  # base_url: "https://docln.sbs"   # Optional override
+  # img_base_url: ""               # Optional image base path
 
 paths:
-  # Folder containing volume directories; each subfolder = a volume; files inside are chapters
-  input: "4_output_md"   # Relative to project root or absolute path
-  # Optional custom log directory (relative or absolute). If empty, defaults to inventory/logs
-  log: "inventory/logs/uploader"
+  input: "4_output_md/kyoukai_senjou_no_horizon"            # Folder containing volumes
+  log: "inventory/logs/uploader"  # Log folder
+
+retry:
+  delay_on_429: 10    # seconds to wait after 429
+  max_retries: 20      # max retries on 429
