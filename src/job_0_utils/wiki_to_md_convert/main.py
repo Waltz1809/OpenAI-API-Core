@@ -96,6 +96,64 @@ def _new_token(token_map: Dict[str, Tuple[str, str | None]], url: str, caption: 
 	token_map[tok] = (url, caption)
 	return tok
 
+import re
+
+# Robust template/ruby/furigana patterns
+FURIGANA_TEMPLATE_FULL_RE = re.compile(
+    r"(?:<\s*)?\{\{\s*(?:ruby|ふりがな|furigana)\s*\|([^|}]+)(?:\|[^}]*)*\}\}(?:\s*>)?",
+    re.IGNORECASE | re.DOTALL,
+)
+
+FURIGANA_RUBY_RE = re.compile(
+    r"<ruby\s*>(?P<inner>.*?)</ruby\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+
+RT_RE = re.compile(r"<rt\s*>.*?</rt\s*>", re.IGNORECASE | re.DOTALL)
+
+ANGLE_AROUND_BOLD_RE = re.compile(r"<\s*\*\*(.+?)\*\*\s*>", re.DOTALL)
+
+
+def remove_furigana(text: str) -> str:
+    """
+    Replace furigana/ruby markup with Markdown bold of the base text.
+
+    Examples:
+      <{{furigana|Seven-Headed Dragon|Seven Heads}}>  -> **Seven-Headed Dragon**
+      {{ruby|computer|コンピュータ}}                   -> **computer**
+      東京<ruby>京<rt>きょう</rt></ruby>              -> **東京**
+    """
+
+    def _template_sub(m: re.Match) -> str:
+        base = (m.group(1) or "").strip()
+        return f"**{base}**"
+
+    def _ruby_sub(m: re.Match) -> str:
+        inner = m.group("inner") or ""
+        # remove all <rt>...</rt> occurrences inside the ruby block
+        base_only = RT_RE.sub("", inner).strip()
+        return f"**{base_only}**"
+
+    prev = None
+    s = text
+
+    # Do a few passes to catch nested / weird placements
+    while s != prev:
+        prev = s
+        # 1) Replace templates (handles with or without surrounding <>)
+        s = FURIGANA_TEMPLATE_FULL_RE.sub(_template_sub, s)
+
+        # 2) Replace <ruby>...</ruby> (strip <rt> tags inside)
+        s = FURIGANA_RUBY_RE.sub(_ruby_sub, s)
+
+        # 3) Remove any <**...**> wrappers left around our bold tokens
+        s = ANGLE_AROUND_BOLD_RE.sub(r"**\1**", s)
+
+        # 4) If upstream processors escaped special chars (e.g. produced \* \< \>),
+        #    remove backslashes before these specific chars so Markdown renders correctly.
+        s = re.sub(r"\\([<>*])", r"\1", s)
+
+    return s
 
 GALLERY_RE = re.compile(r"<gallery[^>]*>(.*?)</gallery>", re.IGNORECASE | re.DOTALL)
 INLINE_IMG_RE = re.compile(r"\[\[(?:File|Image):\s*([^|\]]+?)(?:\|([^\]]*?))?\]\]", re.IGNORECASE)
@@ -135,8 +193,13 @@ def replace_images(api: str, wikitext: str) -> tuple[str, Dict[str, Tuple[str, s
 	wikitext = INLINE_IMG_RE.sub(_inline_sub, wikitext)
 	return wikitext, token_map
 
+def unescape_markdown(md: str) -> str:
+    # Remove backslashes before * < >
+    return re.sub(r"\\([*<>])", r"\1", md)
 
 def convert_wiki_to_md(api: str, wikitext: str) -> str:
+	wikitext = remove_furigana(wikitext)
+
 	text_with_tokens, token_map = replace_images(api, wikitext)
 	processed = preprocess_wikitext(text_with_tokens)
 	try:
@@ -151,6 +214,9 @@ def convert_wiki_to_md(api: str, wikitext: str) -> str:
 		else:
 			rep = f"![]({url})"
 		md = md.replace(token, rep)
+	
+	md = unescape_markdown(md)
+
 	return md
 
 
