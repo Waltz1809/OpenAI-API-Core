@@ -11,3 +11,5 @@ inventory/logs/uploader/*
 2_input_segment/*
 3_output_segment/*
 4_output_md/*
+inventory/prompt/*
+src/job_0_utils/epub_to_md_convert/__pycache__/*

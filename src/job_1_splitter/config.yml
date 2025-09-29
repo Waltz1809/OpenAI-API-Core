@@ -9,7 +9,7 @@ paths:
 
 # Processing Settings
 processing:
-  segment_length: 35000           # Number of characters per segment
+  segment_length: 30000           # Number of characters per segment
 
 # Logging Settings
 logging:

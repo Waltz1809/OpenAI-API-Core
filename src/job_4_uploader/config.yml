@@ -5,12 +5,12 @@ credentials:
   password: "cocaiccc"
 
 series:
-  novel_id: "23258"        # Required
+  novel_id: "23547"        # Required
   # base_url: "https://docln.sbs"   # Optional override
   # img_base_url: ""               # Optional image base path
 
 paths:
-  input: "4_output_md/kyoukai_senjou_no_horizon"            # Folder containing volumes
+  input: "4_output_md/owari_no_chronicle"            # Folder containing volumes
   log: "inventory/logs/uploader"  # Log folder
 
 retry:

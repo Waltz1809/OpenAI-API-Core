@@ -1,11 +1,11 @@
-# EPUB to Markdown converter config
-# Required: directory containing .epub files
-input_dir: 0_epub
+# Configuration for EPUB to MD converter
+epub:
+  combine_to_one_md: false  # true to merge all chapters into one MD file
+  input_dir: ./input        # optional, default cwd
+  output_dir: ./output      # default output dir
 
-# Required: output directory for extracted markdown
-output_dir: 1_input_md
-
-# Optional flags
-overwrite: true        # overwrite existing chapter files
-combine: false         # also write a single combined markdown file per book
-extract_images: true   # extract images to <book_dir>/_assets/
+image_hosting:
+  method: imgbox            # currently only imgbox supported
+  email: ""                 # imgbox account email
+  password: ""              # imgbox account password
+  album_id: ""              # optional album id for uploaded images

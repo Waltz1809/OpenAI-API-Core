@@ -2,7 +2,7 @@
 # MediaWiki API endpoint
 api: https://www.baka-tsuki.org/project/api.php
 # Root page used to discover volume links
-root_page: Saijaku_Muhai_no_Bahamut  # used if namespace_name is not set
+root_page: Owari_no_Chronicle  # used if namespace_name is not set
 output:
   # Directory (relative) to store raw .wiki exports
   wiki_dir: 0_wiki_exports
@@ -10,4 +10,4 @@ output:
   # root_dir_name: horizon_project
   
 # Only crawl pages whose title starts with this prefix (leave unset for legacy Horizon:Volume discovery)
-prefix_filter: "Saijaku"
+prefix_filter: "Owari"
