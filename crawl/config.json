@@ -1,0 +1,24 @@
+{
+  "series": [
+    {
+      "name": "69Shuba Example Novel",
+      "parser": "shuba",
+      "json_mapping": "crawl_json/no_money_shuba.json",
+      "output_file": "test/output/test.txt",
+      "start_chapter": 1,
+      "max_chapters": 3,
+      "enabled": true
+    }
+  ],
+  "settings": {
+    "headless": false,
+    "browser": "edge",
+    "timeout": 30000,
+    "delay_between_requests": 5,
+    "max_retries": 3,
+    "retry_delay": 10,
+    "resume_mode": true,
+    "auto_resume": false,
+    "log_dir": "logs"
+  }
+} 
