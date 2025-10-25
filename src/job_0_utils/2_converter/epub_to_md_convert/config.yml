@@ -1,0 +1,6 @@
+# config.yml (must be next to main.py)
+api_key: "6d207e02198a847aa98d0a2a901485a5"  # replace with your freeimage.host key
+output_dir: "1_input_md"   # base output directory (relative to CWD)
+input_dir: "0_epub"         # directory to look for .epub files, relative to CWD (CWD is root)
+batch_size: 5          # images per upload batch
+sleep_between_batches: 1  # seconds between batches
