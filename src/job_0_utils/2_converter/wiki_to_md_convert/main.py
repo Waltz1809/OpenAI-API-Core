@@ -24,26 +24,42 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Tuple
-
 import requests
+import pypandoc  
+import yaml  
 
-try:
-	import pypandoc  # type: ignore
-except ImportError as e:  # pragma: no cover
-	raise SystemExit("pypandoc required. Install with: pip install pypandoc") from e
+# -------------------------
+# Paths & Config
+# -------------------------
+CWD = Path.cwd()
+CONFIG_PATH = Path(__file__).resolve().parent  / "config.yml"
+if not CONFIG_PATH.exists():
+    print(f"ERROR: config.yml not found next to main.py ({CONFIG_PATH})")
+    print("Create config.yml (see example in the script header), then re-run.")
+    sys.exit(1)
 
-try:
-	import yaml  # type: ignore
-except ImportError:  # pragma: no cover
-	yaml = None  # Config via YAML becomes unavailable; CLI args still work.
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    config = yaml.safe_load(f) or {}
 
+API = "https://www.baka-tsuki.org/project/api.php"
 
+INPUT_DIR = (CWD / config.get("input_dir", ".")).resolve()
+if not INPUT_DIR:
+    print("WARNING: input_dir is empty in config.yml. Using current working directory.")
+
+OUTPUT_DIR = (CWD / config.get("output_dir", "./output")).resolve()
+if not OUTPUT_DIR:
+    print("WARNING: output_dir is empty in config.yml. Using './output'.")
+
+OVERWRITE = bool(config.get("overwrite", True))
+
+# -------------------------
 @dataclass
 class Settings:
 	api: str
 	input_dir: Path
 	output_dir: Path
-	overwrite: bool = True
+	overwrite: bool
 
 
 IMAGE_CACHE: Dict[str, str | None] = {}
@@ -251,51 +267,14 @@ def process_directory(settings: Settings) -> int:
 
 
 def load_settings() -> Settings:
-	cfg_path = Path(__file__).parent / "config.yml"
-	if not cfg_path.is_file():
-		raise SystemExit(f"Config file not found: {cfg_path}")
-	if yaml is None:
-		raise SystemExit("PyYAML not installed; cannot read config.yml")
-	cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
 
-	api = cfg.get("api")
-	if not api:
-		raise SystemExit("Missing required 'api' in config.yml")
+	api = API
 
-	# Find repo root (non-configurable now)  
-	def _find_repo_root(start: Path) -> Path:
-		current = start.parent if start.is_file() else start
-		for p in [current, *current.parents]:
-			if (p / '.git').is_dir():
-				return p
-		# Fallback to README.md if no .git found
-		for p in [current, *current.parents]:
-			if (p / 'README.md').is_file():
-				return p
-		return current
+	input_dir = INPUT_DIR
 
-	repo_root = _find_repo_root(Path(__file__).resolve())
+	output_dir = OUTPUT_DIR
 
-	input_dir_raw = cfg.get("input_dir")
-	if not input_dir_raw:
-		raise SystemExit("'input_dir' is required in config.yml")
-	# Change working directory to repo root early for simplicity
-	os.chdir(repo_root)
-	inp_path = Path(str(input_dir_raw))
-	input_dir = inp_path if inp_path.is_absolute() else (repo_root / inp_path)
-	if not input_dir.is_dir():
-		raise SystemExit(f"Input directory not found: {input_dir}")
-
-	output_dir_raw = cfg.get("output_dir")
-	if not output_dir_raw:
-		raise SystemExit("'output_dir' is required in config.yml")
-	out_path = Path(str(output_dir_raw))
-	output_dir = out_path if out_path.is_absolute() else (repo_root / out_path)
-
-	overwrite = bool(cfg.get("overwrite", True))
-
-	# Already validated above
-	output_dir.mkdir(parents=True, exist_ok=True)
+	overwrite = OVERWRITE
 
 	return Settings(
 		api=api,

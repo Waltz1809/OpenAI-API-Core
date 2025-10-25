@@ -1,5 +1,3 @@
-api: https://www.baka-tsuki.org/project/api.php
-
 # Required: folder containing .wiki files (relative to repo root or absolute)
 input_dir: 0_wiki_exports
 
