@@ -1,9 +1,0 @@
-When translate title, notice:
-- Prefer pure Vietnamese over Sino-Vietnamese; this can be ignore or less prefer in case of human/object title
-- avoid rarely use word; old word allowed
-- only return translated title, no extra text, explain or answer
-- fixed translation: you will return these when seeing:
-    - Afterword: Lời bạt
-    - Prologue: Mở đầu
-    - Preface: Lời tựa
-    - Glossary: Thuật ngữ

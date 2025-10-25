@@ -1,8 +1,8 @@
 # Uploader configuration
 
 credentials:
-  username: "Phamduytuan006@gmail.com"
-  password: "cocaiccc"
+  username: ""
+  password: ""
 
 series:
   novel_id: "23547"        # Required

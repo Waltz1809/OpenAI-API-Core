@@ -1,0 +1,13 @@
+# --- Web scraping / parsing ---
+beautifulsoup4
+markdownify
+pyyaml
+requests
+playwright
+
+# --- AI / API clients ---
+openai
+google-generativeai
+
+# --- Document conversion ---
+pypandoc

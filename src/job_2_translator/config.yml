@@ -17,9 +17,9 @@ paths:
   output_trans: "3_output_segment"  # Thư mục lưu các file YAML đã dịch
   log_trans: "inventory/logs/translator"
   context_dir: "inventory/context"
-  prompt_file: "inventory/prompt/prompt.txt"
-  title_prompt_file: "inventory/prompt/title_prompt.txt"
-  context_prompt_file: "inventory/prompt/context_prompt.txt"
+  prompt_file: "inventory/prompts/prompt.txt"
+  title_prompt_file: "inventory/prompts/title_prompt.txt"
+  context_prompt_file: "inventory/prompts/context_prompt.txt"
 
 title_api:
   provider: gemini

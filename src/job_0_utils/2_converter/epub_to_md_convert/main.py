@@ -25,7 +25,6 @@ import xml.etree.ElementTree as ET
 import base64
 from pathlib import Path
 from typing import Dict
-
 import yaml
 import requests
 from bs4 import BeautifulSoup
