@@ -39,9 +39,11 @@ with _CONFIG_PATH.open("r", encoding="utf-8") as _f:
         _RAW_CFG = yaml.safe_load(_f) or {}
 
 API: str = _RAW_CFG.get("api", "https://www.baka-tsuki.org/project/api.php")
-ROOT_PAGE: str = _RAW_CFG.get("root_page", "Kyoukai_Senjou_no_Horizon")
+ROOT_PAGE: str = _RAW_CFG.get("root_page", "")
+if not ROOT_PAGE:  # pragma: no cover
+        raise SystemExit("Configuration error: 'root_page' must be specified in config.yml")
 PREFIX_FILTER: str | None = _RAW_CFG.get("prefix_filter")  # Only crawl titles starting with this (case-sensitive)
-WIKI_DIR = Path(_RAW_CFG.get("output", {}).get("wiki_dir", "wiki_exports"))
+WIKI_DIR = Path(_RAW_CFG.get("output_folder", "."))
 
 VISITED: set[str] = set()
 # ---------------------------------------------------------------------

@@ -1,13 +1,14 @@
 # Configuration for bakatsuki crawler
+
 # MediaWiki API endpoint
 api: https://www.baka-tsuki.org/project/api.php
+
 # Root page used to discover volume links
 root_page: Owari_no_Chronicle  # used if namespace_name is not set
-output:
-  # Directory (relative) to store raw .wiki exports
-  wiki_dir: 0_wiki_exports
-  # Optional explicit folder name (else derived from root_page)
-  # root_dir_name: horizon_project
+
+# Directory (relative) to store raw .wiki exports
+# will use cwd if not set
+output_folder: 0_wiki_exports
   
 # Only crawl pages whose title starts with this prefix (leave unset for legacy Horizon:Volume discovery)
 prefix_filter: "Owari"
