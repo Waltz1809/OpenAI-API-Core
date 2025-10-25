@@ -32,6 +32,23 @@ import yaml
 from pathlib import Path
 from typing import Iterable, List, Tuple
 
+# -------------------------
+# Paths & Config
+# -------------------------
+CWD = Path.cwd()
+CONFIG_PATH = Path(__file__).resolve().parent  / "config.yml"
+if not CONFIG_PATH.exists():
+    print(f"ERROR: config.yml not found next to main.py ({CONFIG_PATH})")
+    print("Create config.yml (see example in the script header), then re-run.")
+    sys.exit(1)
+
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    config = yaml.safe_load(f) or {}
+
+INPUT_DIR = (CWD / config.get("INPUT_DIR", ".")).resolve()
+if not INPUT_DIR:
+    print("WARNING: INPUT_DIR is empty in config.yml. Using current working directory.")
+
 # Project root & config (kept as you had it)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 os.chdir(PROJECT_ROOT)
@@ -204,15 +221,8 @@ def process_file(src: Path, src_root: Path, dst_root: Path):
 
 def run() -> int:
     """Run cleaner on configured input directory (in-place)."""
-    cfg = load_config()
-    input_dir = Path(cfg.get('input_dir', '4_output_md_raw'))
 
-    print(f"In-place clean directory: {input_dir}")
-    if not input_dir.exists():
-        print(f"❌ Input directory not found: {input_dir}")
-        return 1
-
-    files = list(iter_markdown_files(input_dir))
+    files = list(iter_markdown_files(INPUT_DIR))
     if not files:
         print("⚠️ No markdown files found.")
         return 0
@@ -222,7 +232,7 @@ def run() -> int:
         text = f.read_text(encoding='utf-8', errors='ignore')
         cleaned = clean_markdown(text)
         f.write_text(cleaned, encoding='utf-8')
-        print(f"[{i}/{len(files)}] {f.relative_to(input_dir)} overwritten")
+        print(f"[{i}/{len(files)}] {f.relative_to(INPUT_DIR)} overwritten")
 
     print("✅ Done.")
     return 0

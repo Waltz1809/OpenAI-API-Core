@@ -1,5 +1,1 @@
-# md_tag_clean configuration
-input_dir: "1_input_md"   # directory to clean in-place (files overwritten)
-strip_empty_lines: true
-collapse_blank_lines: true
-preserve_line_breaks: true
+input_dir: "1_input_md"
