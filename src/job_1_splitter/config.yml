@@ -2,17 +2,14 @@
 # ===================================
 
 # Input/Output Settings  
-paths:
-  input: "1_input_md"     # Input directory (relative to project root)
-  output: "2_input_segment"                 # Output directory (relative to project root)
-  logs: "inventory/logs/splitter"  # Log files directory (relative to project root)
+input_dir: "1_input_md"     # Input directory (relative to project root)
+output_dir: "2_input_segment"                 # Output directory (relative to project root)
 
 # Processing Settings
-processing:
-  segment_length: 30000           # Number of characters per segment
+segment_length: 30000           # Number of characters per segment
 
 # Logging Settings
 logging:
   enable_logging: true             # Enable/disable file logging
   log_level: "INFO"                 # DEBUG, INFO, WARNING, ERROR
-  max_log_size_mb: 10               # Maximum log file size in MB before rotation
+  logs_dir: "inventory/logs/splitter"  # Log files directory (relative to project root)

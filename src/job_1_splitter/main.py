@@ -7,64 +7,58 @@ Simple Text Splitter
 """
 
 import os
+import sys
 import yaml
-import pathlib
+from pathlib import Path
 import re
 import logging
 import datetime
 from typing import List, Dict
 
+# -------------------------
+# Paths & Config
+# -------------------------
+CWD = Path.cwd()
+CONFIG_PATH = Path(__file__).resolve().parent  / "config.yml"
+if not CONFIG_PATH.exists():
+    print(f"ERROR: config.yml not found next to main.py ({CONFIG_PATH})")
+    print("Create config.yml (see example in the script header), then re-run.")
+    sys.exit(1)
 
-REQUIRED_KEYS = [
-    ('paths', 'input'),
-    ('paths', 'output'),
-    ('paths', 'logs'),
-    ('processing', 'segment_length'),
-    ('logging', 'enable_logging'),
-    ('logging', 'log_level'),
-    ('logging', 'max_log_size_mb'),
-]
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    config = yaml.safe_load(f) or {}
 
+OUTPUT_DIR = (CWD / config.get("OUTPUT_DIR", "./output")).resolve()
+if not OUTPUT_DIR:
+    print("WARNING: OUTPUT_DIR is empty in config.yml. Using './output'.")
 
-def validate_config(cfg: Dict):
-    missing = []
-    for section, key in REQUIRED_KEYS:
-        if section not in cfg or key not in cfg[section]:
-            missing.append(f"{section}.{key}")
-    if missing:
-        raise ValueError("Missing required config keys: " + ", ".join(missing))
-    # Basic type / value checks
-    if not isinstance(cfg['processing']['segment_length'], int) or cfg['processing']['segment_length'] <= 0:
-        raise ValueError("processing.segment_length must be positive int")
-    if cfg['logging']['log_level'].upper() not in {'DEBUG','INFO','WARNING','ERROR','CRITICAL'}:
-        raise ValueError("logging.log_level invalid")
+INPUT_DIR = (CWD / config.get("INPUT_DIR", ".")).resolve()
+if not INPUT_DIR:
+    print("WARNING: INPUT_DIR is empty in config.yml. Using current working directory.")
 
+SEGMENT_LENGTH = int(config.get("SEGMENT_LENGTH", 30000))
+if not SEGMENT_LENGTH:
+    print("WARNING: SEGMENT_LENGTH is empty in config.yml. Using 30000.")
 
-def load_config(config_path: str | None = None) -> Dict:
-    """Load a single YAML config strictly; fail fast on errors/missing keys.
+LOG_LEVEL = config.get("logging", {}).get("LOG_LEVEL", "INFO").upper()
+if LOG_LEVEL not in {'DEBUG','INFO','WARNING','ERROR','CRITICAL'}:
+    print("WARNING: Invalid LOG_LEVEL in config.yml. Using 'INFO'.")
+    LOG_LEVEL = "INFO"
 
-    If config_path not provided, uses config.yml alongside this script.
-    """
-    script_dir = pathlib.Path(__file__).resolve().parent
-    path = pathlib.Path(config_path) if config_path else (script_dir / 'config.yml')
-    if not path.is_file():
-        raise FileNotFoundError(f"Config file not found: {path}")
-    with open(path, 'r', encoding='utf-8') as f:
-        data = yaml.safe_load(f)
-    if not isinstance(data, dict):
-        raise ValueError("Config root must be a mapping/dict")
-    validate_config(data)
-    return data
+ENABLE_LOGGING = config.get("logging", {}).get("enable_logging", True)
+
+LOG_DIR = (CWD / config.get("logging", {}).get("logs_dir", ".")).resolve()
+if not LOG_DIR:
+    print("WARNING: logs_dir is empty in config.yml. Using current working directory.")
 
 
-def setup_logging(config: Dict, project_root: pathlib.Path) -> logging.Logger:
+def setup_logging(config: Dict, CWD: Path) -> logging.Logger:
     """Setup logging configuration."""
     logger = logging.getLogger('splitter')
     logger.handlers.clear()  # Clear existing handlers
     
     # Set log level
-    log_level = getattr(logging, config.get('logging', {}).get('log_level', 'INFO').upper())
-    logger.setLevel(log_level)
+    logger.setLevel(LOG_LEVEL)
     
     # Console handler (always enabled)
     console_handler = logging.StreamHandler()
@@ -73,13 +67,10 @@ def setup_logging(config: Dict, project_root: pathlib.Path) -> logging.Logger:
     logger.addHandler(console_handler)
     
     # File handler (if enabled in config)
-    if config.get('logging', {}).get('enable_logging', True):
-        log_dir = project_root / config['paths']['logs']
-        os.makedirs(log_dir, exist_ok=True)
-        
+    if ENABLE_LOGGING:        
         # Create log filename with timestamp
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        log_file = log_dir / f'splitter_{timestamp}.log'
+        log_file = LOG_DIR / f'splitter_{timestamp}.log'
         
         file_handler = logging.FileHandler(log_file, encoding='utf-8')
         file_formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
@@ -89,13 +80,6 @@ def setup_logging(config: Dict, project_root: pathlib.Path) -> logging.Logger:
         logger.info(f"Log file created: {log_file}")
     
     return logger
-
-
-def find_project_root() -> pathlib.Path:
-    """Find project root directory."""
-    current = pathlib.Path(__file__).resolve()
-    # Go up to project root (from src/1_splitter to project root)
-    return current.parent.parent.parent
 
 
 def extract_title(content: str) -> tuple[str, str]:
@@ -125,7 +109,7 @@ def extract_title(content: str) -> tuple[str, str]:
 
 def generate_segment_id(filename: str, segment_num: int) -> str:
     """Generate segment ID from filename."""
-    base_name = pathlib.Path(filename).stem
+    base_name = Path(filename).stem
     clean_name = re.sub(r'[^a-zA-Z0-9]', '_', base_name.lower())
     clean_name = re.sub(r'_+', '_', clean_name).strip('_')
     return f"{clean_name}_segment_{segment_num}"
@@ -182,7 +166,7 @@ def split_text(text: str, max_length: int) -> List[str]:
     return segments
 
 
-def process_file(file_path: pathlib.Path, segment_length: int, logger: logging.Logger) -> List[Dict]:
+def process_file(file_path: Path, logger: logging.Logger) -> List[Dict]:
     """Process a single MD file."""
     try:
         logger.debug(f"📖 Reading file: {file_path}")
@@ -205,7 +189,7 @@ def process_file(file_path: pathlib.Path, segment_length: int, logger: logging.L
         logger.info(f"📑 Title extracted: '{title}' from {file_path.name}")
         
         # Split into segments
-        text_segments = split_text(text, segment_length)
+        text_segments = split_text(text, SEGMENT_LENGTH)
         
         # Create segment objects and log details
         segments = []
@@ -243,7 +227,7 @@ def process_file(file_path: pathlib.Path, segment_length: int, logger: logging.L
         return []
 
 
-def save_yaml(segments: List[Dict], output_path: pathlib.Path, logger: logging.Logger):
+def save_yaml(segments: List[Dict], output_path: Path, logger: logging.Logger):
     """Save segments to YAML file."""
     try:
         os.makedirs(output_path.parent, exist_ok=True)
@@ -275,12 +259,9 @@ def save_yaml(segments: List[Dict], output_path: pathlib.Path, logger: logging.L
 
 def main():
     """Main function with comprehensive logging and statistics."""
-    # Load config
-    config = load_config()
-    project_root = find_project_root()
     
     # Setup logging
-    logger = setup_logging(config, project_root)
+    logger = setup_logging(config, CWD)
     
     # Fancy startup banner
     logger.info("=" * 80)
@@ -288,29 +269,21 @@ def main():
     logger.info("=" * 80)
     logger.info(f"⏰ Started at: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info(f"🔧 Python version: {os.sys.version.split()[0]}")
-    logger.info(f"📂 Working directory: {os.getcwd()}")
+    logger.info(f"📂 Working directory: {CWD}")
     logger.info("=" * 80)
-    
-    input_dir = project_root / config['paths']['input']
-    output_dir = project_root / config['paths']['output']
-    segment_length = config['processing']['segment_length']
     
     # Log configuration details
     logger.info("⚙️  CONFIGURATION:")
-    logger.info(f"   📁 Input directory:  {input_dir}")
-    logger.info(f"   📁 Output directory: {output_dir}")
-    logger.info(f"   ✂️  Segment length:   {segment_length:,} characters")
-    logger.info(f"   📊 Log level:        {config.get('logging', {}).get('log_level', 'INFO')}")
+    logger.info(f"   📁 Input directory:  {INPUT_DIR}")
+    logger.info(f"   📁 Output directory: {OUTPUT_DIR}")
+    logger.info(f"   ✂️  Segment length:   {SEGMENT_LENGTH:,} characters")
+    logger.info(f"   📊 Log level:        {LOG_LEVEL}")
     logger.info("-" * 80)
     
-    if not input_dir.exists():
-        logger.error(f"❌ FATAL: Input directory not found: {input_dir}")
-        logger.error("🛑 Stopping execution - check your configuration")
-        return
     
     # Discovery phase
     logger.info("� DISCOVERY PHASE:")
-    md_files = list(input_dir.rglob('*.md'))
+    md_files = list(INPUT_DIR.rglob('*.md'))
     logger.info(f"   📚 Found {len(md_files)} markdown files")
     
     # Organize files by directory for better logging
@@ -318,8 +291,8 @@ def main():
     total_input_size = 0
     
     for md_file in md_files:
-        rel_path = md_file.relative_to(input_dir)
-        dir_name = str(rel_path.parent) if rel_path.parent != pathlib.Path('.') else 'root'
+        rel_path = md_file.relative_to(INPUT_DIR)
+        dir_name = str(rel_path.parent) if rel_path.parent != Path('.') else 'root'
         
         if dir_name not in dirs_map:
             dirs_map[dir_name] = []
@@ -354,12 +327,12 @@ def main():
         logger.debug(f"    Full path: {md_file}")
         
         # Process file
-        segments = process_file(md_file, segment_length, logger)
+        segments = process_file(md_file, logger)
         
         if segments:
             # Calculate output path (preserve directory structure)
-            rel_path = md_file.relative_to(input_dir)
-            output_file = output_dir / rel_path.with_suffix('.yml')
+            rel_path = md_file.relative_to(INPUT_DIR)
+            output_file = OUTPUT_DIR / rel_path.with_suffix('.yml')
             
             # Save segments
             save_yaml(segments, output_file, logger)
