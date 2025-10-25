@@ -17,58 +17,53 @@ Usage:
 Dependencies:
 pip install beautifulsoup4 markdownify pyyaml requests tqdm
 """
-import os
 import re
 import sys
 import time
 import zipfile
-import shutil
-import tempfile
 import xml.etree.ElementTree as ET
 import base64
 from pathlib import Path
-from io import BytesIO
 from typing import Dict
 
 import yaml
 import requests
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md
-from tqdm import tqdm
 
 # -------------------------
 # Paths & Config
 # -------------------------
-SCRIPT_DIR = Path(__file__).resolve().parent       # config.yml must sit here
-CWD = Path.cwd()                                   # root for searching files (as requested)
-
-CONFIG_PATH = SCRIPT_DIR / "config.yml"
-DEFAULT_CONFIG = {
-    "api_key": "",
-    "output_dir": "output",
-    "input_dir": ".",               # relative to CWD; default is CWD (root)
-    "batch_size": 5,
-    "sleep_between_batches": 1
-}
-
+CWD = Path.cwd()
+CONFIG_PATH = Path(__file__).resolve().parent  / "config.yml"
 if not CONFIG_PATH.exists():
     print(f"ERROR: config.yml not found next to main.py ({CONFIG_PATH})")
     print("Create config.yml (see example in the script header), then re-run.")
     sys.exit(1)
 
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-    cfg = yaml.safe_load(f) or {}
-config = {**DEFAULT_CONFIG, **cfg}
+    config = yaml.safe_load(f) or {}
 
 API_KEY = (config.get("api_key") or "").strip()
 if not API_KEY:
     print("ERROR: api_key is empty in config.yml. freeimage.host API key required.")
     sys.exit(1)
 
-OUTPUT_BASE = CWD / config.get("output_dir", "output")
-INPUT_DIR = (CWD / config.get("input_dir", ".")).resolve()  # search root is CWD; input_dir is relative to CWD
+OUTPUT_DIR = (CWD / config.get("output_dir", "./output")).resolve()
+if not OUTPUT_DIR:
+    print("WARNING: output_dir is empty in config.yml. Using './output'.")
+
+INPUT_DIR = (CWD / config.get("input_dir", ".")).resolve()
+if not INPUT_DIR:
+    print("WARNING: input_dir is empty in config.yml. Using current working directory.")
+
 BATCH_SIZE = int(config.get("batch_size", 5))
+if not BATCH_SIZE:
+    print("WARNING: batch_size is empty in config.yml. Using 5.")
+
 SLEEP_BETWEEN_BATCHES = float(config.get("sleep_between_batches", 1))
+if not SLEEP_BETWEEN_BATCHES:
+    print("WARNING: sleep_between_batches is empty in config.yml. Using 1 second.")
 
 FREEIMAGE_API_URL = "https://cors.moldich.eu.org/?q=https://freeimage.host/api/1/upload"
 
@@ -400,7 +395,7 @@ def process_epub(epub_path: Path):
         except Exception:
             pass
         safe_book_title = sanitize_filename(book_title)
-        output_folder = OUTPUT_BASE / safe_book_title
+        output_folder = OUTPUT_DIR / safe_book_title
         print(f"Output folder: {output_folder}")
         if not output_folder.exists():
             output_folder.mkdir(parents=True, exist_ok=True)
@@ -547,7 +542,7 @@ def main():
     if not epubs:
         print(f"No epub files found in input_dir: {INPUT_DIR}. Place .epub files there or pass as argument.")
         return
-    OUTPUT_BASE.mkdir(parents=True, exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     for epub in epubs:
         try:
             process_epub(epub)

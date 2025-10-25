@@ -8,7 +8,7 @@ root_page: Owari_no_Chronicle  # used if namespace_name is not set
 
 # Directory (relative) to store raw .wiki exports
 # will use cwd if not set
-output_folder: 0_wiki_exports
+output_dir: 0_wiki_exports
   
 # Only crawl pages whose title starts with this prefix (leave unset for legacy Horizon:Volume discovery)
 prefix_filter: "Owari"

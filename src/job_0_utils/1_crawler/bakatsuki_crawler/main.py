@@ -13,7 +13,7 @@ Configuration:
                 api: https://www.baka-tsuki.org/project/api.php
                 root_page: Kyoukai_Senjou_no_Horizon
                 output:
-                    wiki_dir: wiki_exports
+                    OUTPUT_DIR: wiki_exports
 
 Notes:
     - The script avoids re-fetching pages via an in-memory VISITED set.
@@ -23,6 +23,7 @@ Notes:
 
 from pathlib import Path
 import re
+import sys
 import requests
 
 try:  # Optional dependency (PyYAML). Fail fast with clear message if missing.
@@ -31,19 +32,22 @@ except ImportError as _e:  # pragma: no cover
         raise SystemExit("PyYAML is required. Install with: pip install pyyaml") from _e
 
 # ------------------------- Load Configuration -------------------------
-_CONFIG_PATH = Path(__file__).parent / "config.yml"
-if not _CONFIG_PATH.exists():  # pragma: no cover
-        raise SystemExit(f"Missing config file: {_CONFIG_PATH}")
+CWD = Path.cwd()
+CONFIG_PATH = Path(__file__).resolve().parent  / "config.yml"
+if not CONFIG_PATH.exists():
+    print(f"ERROR: config.yml not found next to main.py ({CONFIG_PATH})")
+    print("Create config.yml (see example in the script header), then re-run.")
+    sys.exit(1)
 
-with _CONFIG_PATH.open("r", encoding="utf-8") as _f:
-        _RAW_CFG = yaml.safe_load(_f) or {}
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    config = yaml.safe_load(f) or {}
 
-API: str = _RAW_CFG.get("api", "https://www.baka-tsuki.org/project/api.php")
-ROOT_PAGE: str = _RAW_CFG.get("root_page", "")
+API: str = config.get("api", "https://www.baka-tsuki.org/project/api.php")
+ROOT_PAGE: str = config.get("root_page", "")
 if not ROOT_PAGE:  # pragma: no cover
         raise SystemExit("Configuration error: 'root_page' must be specified in config.yml")
-PREFIX_FILTER: str | None = _RAW_CFG.get("prefix_filter")  # Only crawl titles starting with this (case-sensitive)
-WIKI_DIR = Path(_RAW_CFG.get("output_folder", "."))
+PREFIX_FILTER: str | None = config.get("prefix_filter")  # Only crawl titles starting with this (case-sensitive)
+OUTPUT_DIR = Path(config.get("output_dir", "."))
 
 VISITED: set[str] = set()
 # ---------------------------------------------------------------------
@@ -115,7 +119,7 @@ def sanitize_filename(name: str) -> str:
 # from ROOT_PAGE (lowercased, sanitized).
 _root_dir_override = _RAW_CFG.get("output", {}).get("root_dir_name") if _RAW_CFG.get("output") else None
 ROOT_DIR_NAME = sanitize_filename((_root_dir_override or ROOT_PAGE).lower())
-PROJECT_DIR = WIKI_DIR / ROOT_DIR_NAME  # All exports for this root page live here
+PROJECT_DIR = OUTPUT_DIR / ROOT_DIR_NAME  # All exports for this root page live here
 # -----------------------------------------------------------------------
 
 
@@ -176,7 +180,7 @@ def process_page(title: str):
     if not wikitext:
         return
 
-    wiki_path = title_to_path(WIKI_DIR, title, ".wiki")
+    wiki_path = title_to_path(OUTPUT_DIR, title, ".wiki")
     save_file(wikitext, wiki_path)
     print(f"📄 Saved {wiki_path}")
 
