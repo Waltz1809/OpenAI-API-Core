@@ -6,7 +6,7 @@ input_dir: "1_input_md"     # Input directory (relative to project root)
 output_dir: "2_input_segment"                 # Output directory (relative to project root)
 
 # Processing Settings
-segment_length: 30000           # Number of characters per segment
+segment_length: 20000           # Number of characters per segment
 
 # Logging Settings
 logging:
