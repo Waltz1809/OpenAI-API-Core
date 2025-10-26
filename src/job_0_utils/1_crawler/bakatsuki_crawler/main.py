@@ -117,7 +117,7 @@ def sanitize_filename(name: str) -> str:
 # -------- Project root folder (one folder per novel/root page) ---------
 # Allow optional manual override via config key 'root_dir_name'. Otherwise derive
 # from ROOT_PAGE (lowercased, sanitized).
-_root_dir_override = _RAW_CFG.get("output", {}).get("root_dir_name") if _RAW_CFG.get("output") else None
+_root_dir_override = config.get("output", {}).get("root_dir_name") if config.get("output") else None
 ROOT_DIR_NAME = sanitize_filename((_root_dir_override or ROOT_PAGE).lower())
 PROJECT_DIR = OUTPUT_DIR / ROOT_DIR_NAME  # All exports for this root page live here
 # -----------------------------------------------------------------------
