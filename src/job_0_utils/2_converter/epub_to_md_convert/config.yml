@@ -11,6 +11,6 @@ output_dir: "1_input_md"
 
 # images upload settings
 # images per upload batch
-batch_size: 5          
+batch_size: 10          
 # seconds between batches (recommended at least 1 second to avoid rate limiting)
-sleep_between_batches: 1  
+sleep_between_batches: 5 
