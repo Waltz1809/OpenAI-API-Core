@@ -18,17 +18,19 @@ Dependencies:
 pip install beautifulsoup4 markdownify pyyaml requests tqdm
 """
 import re
+import shutil
 import sys
 import time
+import uuid
 import zipfile
 import xml.etree.ElementTree as ET
-import base64
 from pathlib import Path
 from typing import Dict
 import yaml
-import requests
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md
+import asyncio
+from pyimgbox._gallery import Gallery
 
 # -------------------------
 # Paths & Config
@@ -64,7 +66,7 @@ SLEEP_BETWEEN_BATCHES = float(config.get("sleep_between_batches", 1))
 if not SLEEP_BETWEEN_BATCHES:
     print("WARNING: sleep_between_batches is empty in config.yml. Using 1 second.")
 
-FREEIMAGE_API_URL = "https://cors.moldich.eu.org/?q=https://freeimage.host/api/1/upload"
+API_URL = "https://cors.moldich.eu.org/?q=https://freeimage.host/api/1/upload"
 
 # -------------------------
 # XML helpers
@@ -308,68 +310,66 @@ def guess_mime_for_filename(fname: str):
     ext = Path(fname).suffix.lower()
     return _EXT_TO_MIME.get(ext, 'application/octet-stream')
 
-def upload_image_batch_base64(image_dict: Dict[str, bytes]):
+
+async def upload_image_batch_async(file_paths, gallery_title="Default Gallery"):
+    uploaded = {}
+
+    async with Gallery(title=gallery_title, thumb_width=350) as gallery:
+        async for sub in gallery.add(file_paths):
+            if sub.success and sub.image_url:
+                uploaded[sub.filepath.name] = sub.image_url
+            else:
+                uploaded[sub.filepath.name] = None
+    return uploaded
+
+
+def upload_image_batch(image_dict):
     """
-    Upload images to freeimage.host using base64-encoded payloads (without BytesIO).
-    The API still expects multipart/form-data with binary data, so we decode the base64 back
-    into bytes at send-time to ensure compatibility.
+    1️⃣ Prepare temp files
+    2️⃣ Upload with async pyimgbox
+    3️⃣ Collect URLs
+    4️⃣ Clean up all temp files before next batch
     """
     uploaded = {}
     entries = list(image_dict.items())
     total = len(entries)
-    idx = 0
+    gallery_title = f"EPUB Image Upload {time.strftime('%Y-%m-%d %H:%M:%S')}"
+
     print(f"[upload] Uploading {total} images in batches of {BATCH_SIZE}...")
 
     for i in range(0, total, BATCH_SIZE):
-        batch = entries[i:i+BATCH_SIZE]
-        print(f"[upload] Batch {i // BATCH_SIZE + 1} / {((total - 1) // BATCH_SIZE) + 1}, {len(batch)} images...")
+        batch = entries[i:i + BATCH_SIZE]
+        batch_no = i // BATCH_SIZE + 1
+        print(f"[upload] Batch {batch_no} / {((total - 1) // BATCH_SIZE) + 1}, {len(batch)} images...")
+
+        # 🧩 Step 1 — Prepare batch temp folder
+        temp_dir = Path("temp_uploads") / f"batch_{uuid.uuid4().hex[:8]}"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        file_paths = []
         for filename, bts in batch:
-            idx += 1
-            try:
-                # Encode to base64, then decode back to bytes for upload (no BytesIO)
-                b64 = base64.b64encode(bts).decode("ascii")
-                data = {
-                    'key': API_KEY,
-                    'action': 'upload',
-                    'format': 'json'
-                }
-                mime = guess_mime_for_filename(filename)
-                # Send binary as a simple tuple (no BytesIO)
-                files = {'source': (filename, base64.b64decode(b64), mime)}
+            temp_path = temp_dir / Path(filename).name
+            with open(temp_path, "wb") as f:
+                f.write(bts)
+            file_paths.append(temp_path)
 
-                resp = requests.post(FREEIMAGE_API_URL, data=data, files=files, timeout=120)
-                if resp.status_code != 200:
-                    print(f"  [!] {idx}/{total} {filename} -> HTTP {resp.status_code}, fallback to filename")
-                    uploaded[filename] = filename
-                    continue
+        # 🧩 Step 2 — Async upload
+        batch_result = asyncio.run(upload_image_batch_async(file_paths, gallery_title))
 
-                j = resp.json()
-                if isinstance(j, dict) and j.get('status_code') == 200 and j.get('success'):
-                    url = (
-                        j.get('image', {}).get('url')
-                        or j.get('image', {}).get('display_url')
-                        or j.get('image', {}).get('url_viewer')
-                    )
-                    if url:
-                        uploaded[filename] = url
-                        print(f"  [✓] {idx}/{total} {filename} -> {url}")
-                    else:
-                        uploaded[filename] = filename
-                        print(f"  [~] {idx}/{total} {filename} -> uploaded but no url returned")
-                else:
-                    uploaded[filename] = filename
-                    reason = j.get('status_txt') if isinstance(j, dict) else str(j)
-                    print(f"  [✗] {idx}/{total} {filename} -> API error: {reason}")
+        # 🧩 Step 3 — Collect result mapping (keep original filenames)
+        for filename, path in zip((fn for fn, _ in batch), file_paths):
+            uploaded[filename] = batch_result.get(path.name) or filename
 
-            except Exception as e:
-                uploaded[filename] = filename
-                print(f"  [ERROR] {idx}/{total} {filename} -> {e}")
+        # 🧩 Step 4 — Cleanup (delete entire batch folder)
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        print(f"  [clean] Temp folder deleted: {temp_dir}")
 
         if i + BATCH_SIZE < total:
             time.sleep(SLEEP_BETWEEN_BATCHES)
 
+    # Final summary
     success_count = sum(1 for v in uploaded.values() if v and v != Path(v).name)
     print(f"[upload] Completed. {success_count}/{total} images uploaded with remote URLs.")
+    
     return uploaded
 
 # -------------------------
@@ -480,7 +480,7 @@ def process_epub(epub_path: Path):
         print(f"Collected {len(images_to_upload)} unique images referenced by chapters.")
         uploaded_map = {}
         if images_to_upload:
-            uploaded_map = upload_image_batch_base64(images_to_upload)
+            uploaded_map = upload_image_batch(images_to_upload)
         else:
             print("[upload] No images to upload.")
         total_ch = len(chapters)

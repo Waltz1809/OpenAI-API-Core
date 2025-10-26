@@ -4,6 +4,7 @@ markdownify
 pyyaml
 requests
 playwright
+pyimgbox
 
 # --- AI / API clients ---
 openai
