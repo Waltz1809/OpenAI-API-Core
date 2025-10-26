@@ -28,7 +28,7 @@ if not CONFIG_PATH.exists():
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     config = yaml.safe_load(f) or {}
 
-OUTPUT_DIR = (CWD / config.get("output_dir", ".")).resolve()
+OUTPUT_DIR = (CWD / config.get("output_dir", "./output")).resolve()
 if not OUTPUT_DIR:
     print("WARNING: OUTPUT_DIR is empty in config.yml. Using './output'.")
 
