@@ -66,8 +66,6 @@ SLEEP_BETWEEN_BATCHES = float(config.get("sleep_between_batches", 1))
 if not SLEEP_BETWEEN_BATCHES:
     print("WARNING: sleep_between_batches is empty in config.yml. Using 1 second.")
 
-API_URL = "https://cors.moldich.eu.org/?q=https://freeimage.host/api/1/upload"
-
 # -------------------------
 # XML helpers
 # -------------------------
@@ -314,7 +312,7 @@ def guess_mime_for_filename(fname: str):
 async def upload_image_batch_async(file_paths, gallery_title="Default Gallery"):
     uploaded = {}
 
-    async with Gallery(title=gallery_title, thumb_width=350) as gallery:
+    async with Gallery(title=gallery_title, thumb_width=350, adult=True, comments_enabled=False) as gallery:
         async for sub in gallery.add(file_paths):
             if sub.success and sub.image_url:
                 uploaded[sub.filepath.name] = sub.image_url

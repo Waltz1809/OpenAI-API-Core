@@ -1,16 +1,16 @@
 # Uploader configuration
 
 credentials:
-  username: ""
-  password: ""
+  username: "phamduytuan006@gmail.com"
+  password: "cocaiccc3"
 
 series:
-  novel_id: "23547"        # Required
+  novel_id: "23258"        # Required
   # base_url: "https://docln.sbs"   # Optional override
   # img_base_url: ""               # Optional image base path
 
 paths:
-  input: "4_output_md/owari_no_chronicle"            # Folder containing volumes
+  input: "4_output_md/Volume-10A"            # Folder containing volumes
   log: "inventory/logs/uploader"  # Log folder
 
 retry:
