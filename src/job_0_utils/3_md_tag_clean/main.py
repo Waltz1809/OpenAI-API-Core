@@ -45,7 +45,7 @@ if not CONFIG_PATH.exists():
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     config = yaml.safe_load(f) or {}
 
-INPUT_DIR = (CWD / config.get("INPUT_DIR", ".")).resolve()
+INPUT_DIR = (CWD / config.get("input_dir", ".")).resolve()
 if not INPUT_DIR:
     print("WARNING: INPUT_DIR is empty in config.yml. Using current working directory.")
 
