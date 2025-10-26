@@ -28,19 +28,19 @@ if not CONFIG_PATH.exists():
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     config = yaml.safe_load(f) or {}
 
-OUTPUT_DIR = (CWD / config.get("OUTPUT_DIR", "./output")).resolve()
+OUTPUT_DIR = (CWD / config.get("output_dir", ".")).resolve()
 if not OUTPUT_DIR:
     print("WARNING: OUTPUT_DIR is empty in config.yml. Using './output'.")
 
-INPUT_DIR = (CWD / config.get("INPUT_DIR", ".")).resolve()
+INPUT_DIR = (CWD / config.get("input_dir", ".")).resolve()
 if not INPUT_DIR:
     print("WARNING: INPUT_DIR is empty in config.yml. Using current working directory.")
 
-SEGMENT_LENGTH = int(config.get("SEGMENT_LENGTH", 30000))
+SEGMENT_LENGTH = int(config.get("segment_length", 30000))
 if not SEGMENT_LENGTH:
     print("WARNING: SEGMENT_LENGTH is empty in config.yml. Using 30000.")
 
-LOG_LEVEL = config.get("logging", {}).get("LOG_LEVEL", "INFO").upper()
+LOG_LEVEL = config.get("logging", {}).get("log_level", "INFO").upper()
 if LOG_LEVEL not in {'DEBUG','INFO','WARNING','ERROR','CRITICAL'}:
     print("WARNING: Invalid LOG_LEVEL in config.yml. Using 'INFO'.")
     LOG_LEVEL = "INFO"
