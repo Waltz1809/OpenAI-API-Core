@@ -43,16 +43,15 @@ class Logger:
             f"{date_part}_{time_part}_{sdk_type}_{base_name}{suffix}.log"
         )
         
-        # Token tracking - DeepSeek compatible
+        # Token tracking - Simplified (loại bỏ cache tokens không sử dụng)
         self.total_tokens = {
             "input": 0, 
             "output": 0, 
             "thinking": 0,
-            "cache_hit": 0,
-            "cache_miss": 0,
             "total": 0
         }
         self.request_count = 0
+        self.content_request_count = 0  # Chỉ đếm content segments (không tính Title_Chapter)
         
         # Khởi tạo log file
         self._write_header()
@@ -73,37 +72,34 @@ class Logger:
             segment_id: ID của segment
             status: "THÀNH CÔNG" hoặc "THẤT BẠI"
             error: Thông tin lỗi (nếu có)
-            token_info: {"input": int, "output": int, "thinking": int, "cache_hit": int, "cache_miss": int, "total": int}
+            token_info: {"input": int, "output": int, "thinking": int}
         """
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_message = f"[{timestamp}] {segment_id}: {status}"
         
-        # Thêm token info nếu có - DeepSeek format
+        # Thêm token info nếu có - Simplified format
         if token_info:
             input_tokens = token_info.get('input', 0)
             output_tokens = token_info.get('output', 0)
-            cache_hit = token_info.get('cache_hit', 0)
-            cache_miss = token_info.get('cache_miss', 0)
-            total_tokens = token_info.get('total', 0)
+            thinking_tokens = token_info.get('thinking', 0)
             
-            # Log format: input = prompt tokens, output = completion | cache hit
-            if cache_hit > 0:
-                log_message += f" | Tokens: In={input_tokens}, Out={output_tokens} | Cache Hit={cache_hit}"
-            else:
-                log_message += f" | Tokens: In={input_tokens}, Out={output_tokens}"
+            # Log format: input = prompt tokens, output = completion
+            log_message += f" | Tokens: In={input_tokens}, Out={output_tokens}"
             
             # Cập nhật tổng token
             self.total_tokens["input"] += input_tokens
             self.total_tokens["output"] += output_tokens
-            self.total_tokens["cache_hit"] += cache_hit
-            self.total_tokens["cache_miss"] += cache_miss
-            self.total_tokens["total"] += total_tokens
-            
-            # Thinking tokens sẽ được tính trong summary
-            thinking_tokens = token_info.get('thinking', 0)
             self.total_tokens["thinking"] += thinking_tokens
             
+            # Tính total tokens = input + output + thinking
+            request_total = input_tokens + output_tokens + thinking_tokens
+            self.total_tokens["total"] += request_total
+            
             self.request_count += 1
+            
+            # Chỉ đếm content segments (không tính Title_Chapter)
+            if not segment_id.startswith("Title_"):
+                self.content_request_count += 1
         
         if error:
             log_message += f" - Lỗi: {error}"
@@ -120,16 +116,14 @@ class Logger:
             f.write(f"\n--- TỔNG KẾT ---\n")
             f.write(f"Model: {model_name}\n")
             f.write(f"Tổng segments: {total_segments}\n")
-            f.write(f"Thành công: {successful}\n")
-            f.write(f"Thất bại: {failed}\n")
+            f.write(f"Thành công: {self.content_request_count}\n")
+            f.write(f"Thất bại: {total_segments - self.content_request_count}\n")
             
             if self.request_count > 0:
                 f.write(f"\n--- TOKEN USAGE ---\n")
                 f.write(f"Số request thành công: {self.request_count}\n")
                 f.write(f"Input tokens (prompt): {self.total_tokens['input']:,}\n")
                 f.write(f"Output tokens (completion): {self.total_tokens['output']:,}\n")
-                f.write(f"Cache hit tokens: {self.total_tokens['cache_hit']:,}\n")
-                f.write(f"Cache miss tokens: {self.total_tokens['cache_miss']:,}\n")
                 if self.total_tokens['thinking'] > 0:
                     f.write(f"Reasoning tokens: {self.total_tokens['thinking']:,}\n")
                 f.write(f"Total tokens: {self.total_tokens['total']:,}\n")
@@ -138,12 +132,6 @@ class Logger:
                 avg_output = self.total_tokens['output'] / self.request_count
                 f.write(f"Trung bình Input/request: {avg_input:.1f}\n")
                 f.write(f"Trung bình Output/request: {avg_output:.1f}\n")
-                
-                # Cache efficiency
-                total_prompt = self.total_tokens['cache_hit'] + self.total_tokens['cache_miss']
-                if total_prompt > 0:
-                    cache_rate = (self.total_tokens['cache_hit'] / total_prompt) * 100
-                    f.write(f"Cache hit rate: {cache_rate:.1f}%\n")
             
             if cost_info:
                 f.write(f"\n--- CHI PHÍ DỰ KIẾN ---\n")

@@ -12,6 +12,7 @@ import json
 import time
 import re
 import logging
+import yaml
 from datetime import datetime
 from playwright.sync_api import sync_playwright
 from parsers.tw_parser import TWLinovelibParser
@@ -22,6 +23,7 @@ from parsers.shuba_parser import ShubaParser
 from parsers.czbooks_parser import CZBooksParser
 from parsers.piaotia_parser import PiaotiaParser
 from parsers.quanben_parser import QuanbenParser
+from parsers.sto55_parser import Sto55Parser
 from chapter_detection import enhance_chapter_detection
 
 from clean_logger import CleanLogger, PiaotiaLogger
@@ -201,6 +203,8 @@ class UnifiedCrawler:
             return PiaotiaParser
         elif "quanben.io" in url:
             return QuanbenParser
+        elif "sto55.com" in url:
+            return Sto55Parser
         elif any(domain in url for domain in ["69shuba.com", "69shu.com", "69xinshu.com", "69shu.pro", "69shuba.pro"]):
             # Ưu tiên sử dụng requests parser (tránh timeout với Playwright)
             # Hỗ trợ tất cả domains: 69shuba.com, 69shu.com, 69xinshu.com, 69shu.pro, 69shuba.pro
@@ -221,7 +225,8 @@ class UnifiedCrawler:
             'piaotia': PiaotiaParser,
             'quanben': QuanbenParser,
             'shuba': ShubaParser,
-            '69shuba': ShubaParser
+            '69shuba': ShubaParser,
+            'sto55': Sto55Parser
         }
 
         parser_cls = parser_map.get(parser_type.lower())
@@ -377,19 +382,27 @@ class UnifiedCrawler:
                 max_chapters = series.get('max_chapters', None)
                 delay = self.settings.get('delay_between_requests', 3)
                 current_volume = None
-                file_mode = 'w'  # Luôn ghi đè
-
+                
+                # Xác định file mode: nếu start_chapter > 1 thì append, ngược lại ghi đè
+                file_mode = 'a' if config_start_chapter > 1 else 'w'
+                
                 if config_start_chapter > 1:
-                    print(f"🎯 Bắt đầu từ chapter {config_start_chapter} (theo config)")
-                    self.logger.info(f"🎯 Bắt đầu từ chapter {config_start_chapter} (theo config)")
+                    print(f"🎯 Bắt đầu từ chapter {config_start_chapter} (theo config) - Mode: APPEND")
+                    self.logger.info(f"🎯 Bắt đầu từ chapter {config_start_chapter} (theo config) - Mode: APPEND")
+                else:
+                    print(f"🎯 Bắt đầu từ chapter {config_start_chapter} - Mode: OVERWRITE")
+                    self.logger.info(f"🎯 Bắt đầu từ chapter {config_start_chapter} - Mode: OVERWRITE")
 
-                # Logic đơn giản: crawl từ đầu đến cuối list
-                start_index = 0
-                end_index = len(links)
-
-                # Áp dụng max_chapters nếu có
-                if max_chapters is not None and max_chapters < len(links):
-                    end_index = max_chapters
+                # Tính start_index từ config_start_chapter
+                start_index = config_start_chapter - 1  # Chuyển từ chapter number sang array index
+                
+                # Tính end_index
+                if max_chapters is None:
+                    end_index = len(links)
+                else:
+                    # max_chapters là tổng số chapters muốn crawl (tính từ đầu)
+                    # Nếu start_chapter = 501, max_chapters = 600 -> crawl từ 501 đến 600
+                    end_index = min(len(links), max_chapters)
 
                 print(f"🎯 Sẽ crawl từ index {start_index} đến {end_index-1} (tổng {end_index-start_index} chapters)")
                 self.logger.info(f"🎯 Sẽ crawl từ index {start_index} đến {end_index-1} (tổng {end_index-start_index} chapters)")
@@ -398,14 +411,6 @@ class UnifiedCrawler:
                     with open(output_file, file_mode, encoding='utf-8') as f:
                         if file_mode == 'w':
                             f.write(f"=== {series['name']} ===\n\n")
-
-                        # Tính end_index dựa trên số chapter thực tế có sẵn
-                        if max_chapters is None:
-                            end_index = len(links)
-                        else:
-                            # Tính từ start_index, không phải từ đầu
-                            chapters_to_crawl = max_chapters - (config_start_chapter - 1)
-                            end_index = min(len(links), start_index + chapters_to_crawl)
 
                         for idx in range(start_index, end_index):
                             link_data = links[idx]
@@ -528,7 +533,242 @@ class UnifiedCrawler:
             self.logger.info("🔒 Đóng browser")
             self.close_browser()
 
+    def crawl_series_to_yaml(self, series):
+        """Crawl series và xuất trực tiếp ra YAML format với sorting"""
+        try:
+            print(f"\n🚀 Bắt đầu crawl series: {series['name']}")
+            self.logger.info(f"🚀 Bắt đầu crawl series: {series['name']}")
+            
+            # Setup parser
+            parser_type = series.get('parser', 'tw')
+            parser_cls = self.get_parser_by_type(parser_type)
+            if not parser_cls:
+                error_msg = f"❌ Parser '{parser_type}' không được hỗ trợ"
+                print(error_msg)
+                self.logger.error(error_msg)
+                return False
+            
+            self.current_parser = parser_cls
+            
+            # Setup output file
+            output_dir = self.settings.get('output_dir', 'output')
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Tạo tên file YAML
+            safe_name = re.sub(r'[^\w\-_\.]', '_', series['name'])
+            output_file = os.path.join(output_dir, f"{safe_name}.yaml")
+            
+            # JSON-only approach: tất cả parsers đều dùng JSON mapping
+            json_mapping = series.get('json_mapping')
+            
+            if not json_mapping:
+                print("❌ Thiếu json_mapping trong series config")
+                self.logger.error("❌ Thiếu json_mapping trong series config")
+                return False
+            
+            print(f"📋 Sử dụng JSON mapping cho parser {parser_type}: {json_mapping}")
+            self.logger.info(f"📋 Sử dụng JSON mapping cho parser {parser_type}: {json_mapping}")
+            
+            # Tạo instance của parser để gọi method
+            parser_instance = parser_cls()
+            
+            # JSON-only: chỉ dùng get_catalog_links_from_config
+            enhanced_method = getattr(parser_instance, 'get_catalog_links_from_config', None)
+            if enhanced_method and callable(enhanced_method):
+                links = enhanced_method(self.page, "", series)  # catalog_url không cần thiết
+            else:
+                print("❌ Parser không có method get_catalog_links_from_config")
+                self.logger.error("❌ Parser không có method get_catalog_links_from_config")
+                return False
+            
+            if not links:
+                error_msg = f"❌ Không tìm thấy link chương trong JSON mapping"
+                print(error_msg)
+                self.logger.error(error_msg)
+                return False
+            
+            print(f"✅ Tìm thấy {len(links)} chapters trong JSON mapping")
+            self.logger.info(f"✅ Tìm thấy {len(links)} chapters trong JSON mapping")
+            
+            # Crawl settings
+            delay = series.get('delay', self.settings.get('delay', 2))
+            max_chapters = series.get('max_chapters')
+            start_chapter = series.get('start_chapter', 1)
+            
+            # Tính toán range
+            start_index = start_chapter - 1  # Chuyển từ chapter number sang array index
+            
+            if max_chapters is None:
+                end_index = len(links)
+            else:
+                # max_chapters là tổng số chapters muốn crawl (tính từ đầu)
+                end_index = min(len(links), max_chapters)
+            
+            # Warning cho YAML mode nếu resume
+            if start_chapter > 1 and os.path.exists(output_file):
+                print(f"⚠️  YAML mode: File {output_file} đã tồn tại và sẽ bị GHI ĐÈ")
+                print(f"⚠️  YAML không hỗ trợ append. Nếu muốn giữ data cũ, hãy backup file trước!")
+                self.logger.warning(f"YAML mode: File {output_file} sẽ bị ghi đè (không hỗ trợ append)")
+            
+            print(f"📊 Sẽ crawl từ index {start_index} đến {end_index-1} (chapters {start_chapter} đến {end_index})")
+            self.logger.info(f"📊 Sẽ crawl từ index {start_index} đến {end_index-1} (chapters {start_chapter} đến {end_index})")
+            
+            # Collect all chapters data
+            chapters_data = []
+            
+            for idx in range(start_index, end_index):
+                link_data = links[idx]
+                
+                # Xử lý cả dict (từ JSON) và string (từ parser thường)
+                if isinstance(link_data, dict):
+                    urls = link_data.get('urls', [link_data.get('url')])
+                    chapter_num = link_data.get('chapter_num', idx + 1)
+                    chapter_title = link_data.get('title', '')
+                else:
+                    urls = [link_data]
+                    chapter_num = idx + 1
+                    chapter_title = ''
+                
+                actual_chapter_num = chapter_num if chapter_num is not None else (idx + 1)
+                chapter_info = f"Chapter {actual_chapter_num}"
+                print(f"📖 Crawl {chapter_info} ({len(urls)} URLs): {chapter_title}")
+                
+                # Crawl tất cả URLs và merge content
+                merged_content = []
+                merged_title = ""
+                merged_volume = ""
+                
+                for url_idx, url in enumerate(urls):
+                    print(f"  📄 Crawl URL {url_idx + 1}/{len(urls)}: {url}")
+                    
+                    result = self.crawl_with_retry(url)
+                    if not result:
+                        print(f"⚠️  Bỏ qua URL {url_idx + 1} của {chapter_info}")
+                        continue
+                    
+                    title = result.get('title', '').strip()
+                    volume = result.get('volume', '').strip()
+                    content = result.get('content', '').strip()
+                    
+                    # Lấy title và volume từ URL đầu tiên
+                    if url_idx == 0:
+                        merged_title = title
+                        merged_volume = volume
+                    
+                    # Merge content
+                    if content:
+                        if url_idx == 0:
+                            merged_content.append(content)
+                        else:
+                            if title:
+                                merged_content.append(f"{title}\n\n{content}")
+                            else:
+                                merged_content.append(content)
+                    
+                    # Delay giữa các URLs
+                    if url_idx < len(urls) - 1:
+                        time.sleep(1)
+                
+                # Xử lý merged content
+                final_content = '\n\n'.join(merged_content) if merged_content else ''
+                
+                if not final_content:
+                    print(f"⚠️  Bỏ qua {chapter_info} do không có content")
+                    continue
+                
+                # Clean content
+                parser_cls_for_clean = self.get_parser_by_type(parser_type)
+                if parser_cls_for_clean:
+                    parser_instance_for_clean = parser_cls_for_clean()
+                    clean_method = getattr(parser_instance_for_clean, 'clean_content', None)
+                    if clean_method and callable(clean_method):
+                        clean_content = clean_method(final_content)
+                    else:
+                        clean_content = final_content
+                else:
+                    clean_content = final_content
+                
+                # Tạo segment data
+                segment_id = f"Chapter_{actual_chapter_num}_Segment_1"
+                chapter_data = {
+                    "id": segment_id,
+                    "title": merged_title or f"Chapter {actual_chapter_num}",
+                    "content": clean_content
+                }
+                
+                chapters_data.append({
+                    'data': chapter_data,
+                    'chapter_num': actual_chapter_num,
+                    'volume': merged_volume
+                })
+                
+                print(f"⏳ Đợi {delay} giây...")
+                time.sleep(delay)
+            
+            # SORTING: Sắp xếp chapters theo chapter_num
+            chapters_data.sort(key=lambda x: x['chapter_num'])
+            
+            # Tạo YAML segments
+            yaml_segments = []
+            for chapter_info in chapters_data:
+                yaml_segments.append(chapter_info['data'])
+            
+            # Ghi YAML file
+            print(f"💾 Ghi YAML file: {output_file}")
+            with open(output_file, 'w', encoding='utf-8') as f:
+                yaml.dump(yaml_segments, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+            
+            completion_msg = f"🎉 Hoàn thành {series['name']}: {len(yaml_segments)} chapters -> {output_file}"
+            print(completion_msg)
+            self.logger.info(completion_msg)
+            
+            return True
+            
+        except Exception as e:
+            error_msg = f"❌ Lỗi crawl series '{series['name']}': {e}"
+            print(error_msg)
+            self.logger.error(error_msg)
+            return False
 
+    def run_all_series_yaml(self):
+        """Chạy tất cả series với YAML output format"""
+        try:
+            self.start_browser()
+            
+            series_list = self.config.get('series', [])
+            if not series_list:
+                print("❌ Không tìm thấy series nào trong config")
+                return
+            
+            print(f"📚 Tìm thấy {len(series_list)} series")
+            
+            for series in series_list:
+                if not series.get('enabled', True):
+                    print(f"⏭️  Bỏ qua series '{series['name']}' (disabled)")
+                    continue
+                
+                success = self.crawl_series_to_yaml(series)
+                if not success:
+                    print(f"❌ Thất bại crawl series '{series['name']}'")
+                    continue
+                
+                print(f"✅ Hoàn thành series '{series['name']}'")
+                
+                # Delay giữa các series
+                series_delay = self.settings.get('series_delay', 5)
+                if series_delay > 0:
+                    print(f"⏳ Đợi {series_delay} giây trước khi crawl series tiếp theo...")
+                    time.sleep(series_delay)
+            
+            print("🎉 Hoàn thành tất cả series!")
+            
+        except KeyboardInterrupt:
+            print("\n⚠️  Người dùng dừng crawler")
+        except Exception as e:
+            print(f"❌ Lỗi nghiêm trọng: {e}")
+        finally:
+            self.logger.info("🔒 Đóng browser")
+            self.close_browser()
 
 
 def main():
@@ -596,8 +836,24 @@ def main():
         sys.path.insert(0, script_dir)
     
     crawler = UnifiedCrawler(found_config)
-    crawler.run_all_series()
-
+    
+    # Hỏi người dùng về output format
+    print("\n📋 Chọn output format:")
+    print("1. TXT (format cũ)")
+    print("2. YAML (format mới với sorting)")
+    
+    while True:
+        choice = input("Nhập lựa chọn (1 hoặc 2): ").strip()
+        if choice == '1':
+            print("📝 Sử dụng TXT output format")
+            crawler.run_all_series()
+            break
+        elif choice == '2':
+            print("📝 Sử dụng YAML output format với sorting")
+            crawler.run_all_series_yaml()
+            break
+        else:
+            print("❌ Lựa chọn không hợp lệ! Vui lòng nhập 1 hoặc 2.")
 
 if __name__ == "__main__":
     main()

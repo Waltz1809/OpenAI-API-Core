@@ -62,8 +62,8 @@ class RetryWorkflow:
     def run(self):
         """Chạy retry workflow."""
         try:
-            # 1. Tìm file log mới nhất để phân tích
-            log_file = self._find_latest_log()
+            # 1. Tìm hoặc lấy file log để phân tích
+            log_file = self._get_log_file()
             if not log_file:
                 print("❌ Không tìm thấy file log nào để phân tích!")
                 return
@@ -78,8 +78,8 @@ class RetryWorkflow:
             
             print(f"⚠️ Tìm thấy {len(failed_segments)} segment thất bại")
             
-            # 3. Tìm file output tương ứng để patch
-            output_file = self._find_output_file(log_file)
+            # 3. Tìm hoặc lấy file output để patch
+            output_file = self._get_output_file(log_file)
             if not output_file:
                 print("❌ Không tìm thấy file output tương ứng!")
                 return
@@ -117,6 +117,33 @@ class RetryWorkflow:
         except Exception as e:
             print(f"❌ Lỗi trong retry workflow: {e}")
             raise
+    
+    def _get_log_file(self) -> Optional[str]:
+        """
+        Lấy file log để phân tích.
+        - Nếu config có 'retry_log_file' và khác "LATEST", dùng path đó
+        - Ngược lại, tìm file log mới nhất
+        """
+        # Kiểm tra xem có chỉ định file log cụ thể không
+        retry_log_file = self.config.get('retry_log_file', 'LATEST')
+        
+        if retry_log_file and retry_log_file.upper() != 'LATEST':
+            # Sử dụng file log được chỉ định
+            if os.path.isabs(retry_log_file):
+                log_path = retry_log_file
+            else:
+                # Relative path từ project root
+                log_path = os.path.abspath(retry_log_file)
+            
+            if not os.path.exists(log_path):
+                print(f"❌ File log được chỉ định không tồn tại: {log_path}")
+                return None
+            
+            print(f"📌 Sử dụng file log được chỉ định: {os.path.basename(log_path)}")
+            return log_path
+        
+        # Mặc định: tìm file log mới nhất
+        return self._find_latest_log()
     
     def _find_latest_log(self) -> Optional[str]:
         """Tìm file log mới nhất (KHÔNG BAO GỒM chính file retry log hiện tại)."""
@@ -170,8 +197,35 @@ class RetryWorkflow:
         
         return failed_segments
     
+    def _get_output_file(self, log_file: str) -> Optional[str]:
+        """
+        Lấy file output để patch.
+        - Nếu config có 'retry_output_file' và khác "LATEST", dùng path đó
+        - Ngược lại, tìm file output mới nhất
+        """
+        # Kiểm tra xem có chỉ định file output cụ thể không
+        retry_output_file = self.config.get('retry_output_file', 'LATEST')
+        
+        if retry_output_file and retry_output_file.upper() != 'LATEST':
+            # Sử dụng file output được chỉ định
+            if os.path.isabs(retry_output_file):
+                output_path = retry_output_file
+            else:
+                # Relative path từ project root
+                output_path = os.path.abspath(retry_output_file)
+            
+            if not os.path.exists(output_path):
+                print(f"❌ File output được chỉ định không tồn tại: {output_path}")
+                return None
+            
+            print(f"📌 Sử dụng file output được chỉ định: {os.path.basename(output_path)}")
+            return output_path
+        
+        # Mặc định: tìm file output mới nhất
+        return self._find_output_file(log_file)
+    
     def _find_output_file(self, log_file: str) -> Optional[str]:
-        """Tìm file output tương ứng với log file."""
+        """Tìm file output mới nhất trong output dir."""
         # Đọc header của log để tìm output path
         with open(log_file, 'r', encoding='utf-8') as f:
             for _ in range(10):  # Chỉ đọc vài dòng đầu
@@ -197,7 +251,9 @@ class RetryWorkflow:
         if not yaml_files:
             return None
         
-        return max(yaml_files, key=os.path.getmtime)
+        latest_output = max(yaml_files, key=os.path.getmtime)
+        print(f"🔍 Phát hiện output mới nhất: {os.path.basename(latest_output)}")
+        return latest_output
     
     def _retry_segments(self, failed_segment_ids: List[str], 
                        original_segments: List[Dict]) -> List[Dict]:
@@ -307,7 +363,9 @@ class RetryWorkflow:
                         )
                 
                 q.task_done()
-                time.sleep(1)
+                
+                # Delay để tránh rate limit (đọc từ config)
+                time.sleep(self.config['retry_api'].get('delay', 1))
                 
             except queue.Empty:
                 break

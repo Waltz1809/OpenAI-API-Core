@@ -16,10 +16,10 @@ import traceback
 import sys
 
 # Import enhanced_chapter_splitter functions
-# Thêm đường dẫn tới enhanced folder relative to script location
+# Thêm đường dẫn tới splitter folder relative to script location
 script_dir = os.path.dirname(os.path.abspath(__file__))
-enhanced_path = os.path.join(script_dir, '..', 'enhanced')
-sys.path.append(enhanced_path)
+splitter_path = script_dir  # enhanced_chapter_splitter.py nằm cùng thư mục
+sys.path.append(splitter_path)
 from enhanced_chapter_splitter import split_and_output
 
 class AutoSplitter:
@@ -279,7 +279,8 @@ class AutoSplitter:
             else:  # context_mode
                 max_chars = type_config['context_chars']
             
-            # Call the splitter
+            # Call the splitter với sorting logic mới
+            print(f"    🔄 Processing với sorting logic...")
             split_and_output(
                 file_path=input_file,
                 max_chars=max_chars,
@@ -373,6 +374,7 @@ class AutoSplitter:
     def run_dry_run(self):
         """Chạy dry run để preview"""
         print("🔍 DRY RUN MODE - Preview các file sẽ được xử lý:\n")
+        print("🔄 Sorting Logic: Chapters sẽ được sắp xếp đúng thứ tự\n")
         
         # Check if we would be in auto_process_missing mode
         is_auto_missing = self.config['run_settings'].get('auto_process_missing', False)
@@ -489,6 +491,7 @@ class AutoSplitter:
         # Print config summary
         enabled_modes = [name for name, config in self.config['modes'].items() if config.get('enabled', False)]
         print(f"📋 Enabled modes: {', '.join(enabled_modes)}")
+        print("🔄 Sorting Logic: Chapters sẽ được sắp xếp đúng thứ tự")
         
         # Print run mode
         if self.config['run_settings']['dry_run']:

@@ -19,6 +19,7 @@ from core.ai_factory import load_configs
 from workflows.translate import TranslateWorkflow
 from workflows.retry import RetryWorkflow  
 from workflows.analyze import AnalyzeWorkflow
+from workflows.translate_titles_only import TranslateTitlesOnlyWorkflow
 
 
 def show_menu():
@@ -29,6 +30,7 @@ def show_menu():
     print("1. Dịch thuật (Translate)")
     print("2. Dịch lại các segment lỗi (Retry)")  
     print("3. Phân tích ngữ cảnh (Context Analysis)")
+    print("4. Dịch title riêng (Translate Titles Only)")
     print("0. Thoát")
     print("="*50)
 
@@ -37,12 +39,12 @@ def get_user_choice():
     """Lấy lựa chọn từ user."""
     while True:
         try:
-            choice = input("Nhập lựa chọn của bạn (0-3): ").strip()
+            choice = input("Nhập lựa chọn của bạn (0-4): ").strip()
             
-            if choice in ['0', '1', '2', '3']:
+            if choice in ['0', '1', '2', '3', '4']:
                 return choice
             else:
-                print("❌ Lựa chọn không hợp lệ! Vui lòng nhập 0, 1, 2, hoặc 3.")
+                print("❌ Lựa chọn không hợp lệ! Vui lòng nhập 0, 1, 2, 3, hoặc 4.")
         except KeyboardInterrupt:
             print("\n\n⏹️ Đã hủy chương trình.")
             sys.exit(0)
@@ -68,6 +70,11 @@ def run_workflow(choice: str, config: dict, secret: dict):
             print(f"\n🔍 BẮT ĐẦU WORKFLOW: PHÂN TÍCH NGỮ CẢNH")
             print(f"📁 File nguồn: {config['active_task']['source_yaml_file']}")
             workflow = AnalyzeWorkflow(config, secret)
+            workflow.run()
+            
+        elif choice == '4':
+            print(f"\n🏷️ BẮT ĐẦU WORKFLOW: DỊCH TITLE RIÊNG")
+            workflow = TranslateTitlesOnlyWorkflow(config, secret)
             workflow.run()
             
     except Exception as e:

@@ -140,7 +140,7 @@ class TranslateWorkflow:
                 print(f"🗑️ Đã xóa temp file: {os.path.basename(temp_output_file)}")
             
             # 8. Log summary - đếm từ logger stats
-            successful = self.logger.request_count  # Số request thành công (có token_info)
+            successful = self.logger.content_request_count  # Chỉ đếm content segments
             failed = len(segments) - successful
             self.logger.log_summary(
                 len(segments), successful, failed, self.client.get_model_name()

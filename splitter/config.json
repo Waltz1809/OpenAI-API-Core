@@ -30,7 +30,7 @@
       "input_subdir": "WebNovel", 
       "output_subdir": "WebNovel",
       "segment_chars": 1500,
-      "context_chars": 50000,
+      "context_chars": 10000,
       "segment_suffix": "1k5",
       "description": "Web Novel CN - segments nhỏ cho WN"
     }

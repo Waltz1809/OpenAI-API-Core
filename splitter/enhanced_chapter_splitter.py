@@ -23,14 +23,13 @@ def convert_chinese_number_to_arabic(chinese_number):
         return None
 
 def is_valid_chapter_number(chapter_number, previous_chapter, max_chapter):
-    """Kiểm tra số chương hợp lệ."""
+    """Kiểm tra số chương hợp lệ - Chỉ kiểm tra range, không kiểm tra thứ tự."""
     if chapter_number is None:
         return False
     if chapter_number < 0 or chapter_number > max_chapter:
         return False
-    if previous_chapter is None or chapter_number == previous_chapter + 1 or chapter_number == 1:
-        return True
-    return False
+    # BỎ validation thứ tự - chapters có thể bị xáo trộn, sẽ sort sau
+    return True
 
 def get_output_filename(input_file, user_output, output_format, output_dir):
     """Xác định tên file đầu ra với logic thông minh tránh trùng lặp suffix."""
@@ -446,6 +445,11 @@ def split_content(file_path, max_chapter):
             else:
                 current_section_id = f"Chapter_{chapter_number}"
                 
+            # Log warning nếu chapter không theo thứ tự
+            if previous_chapter_number is not None and chapter_number != previous_chapter_number + 1:
+                if chapter_number != 1:  # Bỏ qua nếu là chapter 1 (bắt đầu mới)
+                    print(f"⚠️  Chapter {chapter_number} xuất hiện sau Chapter {previous_chapter_number} (không theo thứ tự)")
+            
             current_chapter_number = chapter_number
             current_chapter_for_segment = chapter_number
             previous_chapter_number = chapter_number
@@ -625,9 +629,22 @@ def output_to_yaml(sections, output_file, mode, max_chars):
         
         volumes[volume_number].append((section_id, section_lines, chapter_title, chapter_number))
     
-    # Xử lý từng volume
-    for volume_number in sorted(volumes.keys()):
+    # Xử lý từng volume (handle None values)
+    volume_keys = list(volumes.keys())
+    # Sort với None values được đặt cuối
+    volume_keys.sort(key=lambda x: (x is None, x))
+
+    for volume_number in volume_keys:
         volume_sections = volumes[volume_number]
+        
+        # SORTING: Sắp xếp sections theo chapter_number để đảm bảo thứ tự đúng
+        original_order = [x[3] for x in volume_sections if x[3] is not None]
+        volume_sections.sort(key=lambda x: x[3] if x[3] is not None else 999999)
+        sorted_order = [x[3] for x in volume_sections if x[3] is not None]
+        
+        # Thông báo nếu có thay đổi thứ tự
+        if original_order != sorted_order:
+            print(f"📋 Volume {volume_number}: Đã sắp xếp lại chapters từ {original_order} thành {sorted_order}")
         
         # Reset bộ đếm segment trong mỗi volume nếu cần
         volume_segment_counter = 1

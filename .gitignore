@@ -1,1 +1,2 @@
-enhanced/workflow_config.json
+*.json
+*.log

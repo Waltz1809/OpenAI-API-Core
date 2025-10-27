@@ -1,16 +1,19 @@
 {
   "active_task": {
     "task_name": "Dịch văn bản",
-    "source_yaml_file": "data/yaml/input/WebNovel/childhoodx2/chapter.yaml"
+    "source_yaml_file": "data/no_money/no_money_context.yaml"
   },
+  
+  "retry_log_file": "LATEST/file.log mới nhất",
+  "retry_output_file": "File cần patch (.yaml)", 
   
   "translate_api": {
     "provider": "gemini",
     "model": "gemini-2.5-pro",
     "temperature": 1.3,
-    "concurrent_requests": 10,
-    "max_tokens": 20000,
-    "thinking_budget": 2000,
+    "concurrent_requests": 27,
+    "max_tokens": 15000,
+    "thinking_budget": 1500,
     "delay": 45
   },
   
@@ -18,11 +21,11 @@
     "provider": "openai",
     "model": "deepseek-reasoner",
     "temperature": 1.3,
-    "concurrent_requests": 5,
+    "concurrent_requests": 4,
     "max_tokens": 15000,
     "thinking_budget": 1500,
-    "max_retries": 1,
-    "delay": 45
+    "max_retries": 3,
+    "delay": 60
   },
   
   "context_api": {
@@ -35,12 +38,12 @@
   },
   
   "paths": {
-    "output_trans": "data/yaml/output/WebNovel/childhoodx2",
-    "log_trans": "data/result/translation_log/WebNovel/childhoodx2",
-    "context_dir": "data/result/context/WebNovel/childhoodx2",
-    "prompt_file": "data/prompt/system/WebNovel/childhoodx2/childhoodx2_st.txt",
-    "title_prompt_file": "data/prompt/system/utils/title_system.txt",
-    "context_prompt_file": "data/prompt/system/utils/context_wn.txt"
+    "output_trans": "nơi lưu file output.yaml",
+    "log_trans": "log",
+    "context_dir": "nơi lưu file context.yaml, lưu ý là dẫn folder",
+    "prompt_file": "file prompt",
+    "title_prompt_file": "prompt cho title",
+    "context_prompt_file": "prompt phân tích context"
   },
   
   "title_api": {
@@ -61,10 +64,10 @@
     "mode": "chapter",
     "chapter_range": {
       "enabled": true,
-      "start_volume": 1,
+      "start_volume": 0,
       "end_volume": 999,
-      "start_chapter": 254,
-      "end_chapter": 650
+      "start_chapter": 0,
+      "end_chapter": 999
     },
     "segment_range": {
       "enabled": false,
