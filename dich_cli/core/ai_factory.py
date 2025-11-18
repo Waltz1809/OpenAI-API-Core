@@ -11,6 +11,7 @@ from .openai_client import OpenAIClient
 from .gemini_client import GeminiClient
 from .vertex_client import VertexClient
 from .key_rotator import KeyRotator
+from .path_helper import get_path_helper
 
 
 # Global key rotator instance
@@ -132,44 +133,41 @@ class AIClientFactory:
 
 def load_configs() -> tuple[Dict, Dict]:
     """
-    Load cả config.json và secrets.json.
+    Load cả config.json và secrets.json sử dụng PathHelper.
     
     Returns:
         Tuple[config, secret]: Config chính và secret credentials
     """
-    # Load config.json từ thư mục dich_cli/
-    script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    config_path = os.path.join(script_dir, 'config.json')
+    ph = get_path_helper()
     
-    if not os.path.exists(config_path):
-        raise FileNotFoundError("File config.json không tồn tại")
+    # Load config.json từ thư mục dich_cli/
+    config_path = ph.resolve('dich_cli/config.json')
+    
+    if not ph.exists(config_path):
+        raise FileNotFoundError(f"File config.json không tồn tại: {config_path}")
     
     with open(config_path, 'r', encoding='utf-8') as f:
         config = json.load(f)
     
     # Load secrets.json từ thư mục gốc (Dich/)
-    # script_dir = dich_cli/, parent = Dich/
-    parent_dir = os.path.dirname(script_dir)
-    secrets_path = os.path.join(parent_dir, 'secrets.json')
+    secrets_path = ph.resolve('secrets.json')
     
-    if not os.path.exists(secrets_path):
-        # Fallback: tìm trong thư mục dich_cli/ (cho compatibility)
-        fallback_path = os.path.join(script_dir, 'secret.json')
-        if os.path.exists(fallback_path):
-            secrets_path = fallback_path
-        else:
-            # Tạo từ template nếu chưa có
-            template_path = os.path.join(script_dir, 'secret_template.json')
-            if os.path.exists(template_path):
+    if not ph.exists(secrets_path):
+        # Fallback: tìm secrets_2.json
+        secrets_path = ph.resolve('secrets_2.json')
+        if not ph.exists(secrets_path):
+            # Fallback: tìm trong thư mục dich_cli/
+            secrets_path = ph.resolve('dich_cli/secret.json')
+            if not ph.exists(secrets_path):
                 raise FileNotFoundError(
-                    f"File secrets.json không tồn tại ở thư mục gốc: {secrets_path}\n"
-                    f"Hãy copy {template_path} thành secrets.json ở thư mục gốc và điền API keys."
+                    f"File secrets.json không tồn tại.\n"
+                    f"Tìm kiếm ở: secrets.json, secrets_2.json, dich_cli/secret.json\n"
+                    f"Project root: {ph.project_root}"
                 )
-            else:
-                raise FileNotFoundError(f"File secrets.json không tồn tại: {secrets_path}")
     
     with open(secrets_path, 'r', encoding='utf-8') as f:
         secret = json.load(f)
     
-    print(f"✅ Loaded secrets from: {secrets_path}")
+    print(f"✅ Config: {ph.relative_to_project(config_path)}")
+    print(f"✅ Secrets: {ph.relative_to_project(secrets_path)}")
     return config, secret

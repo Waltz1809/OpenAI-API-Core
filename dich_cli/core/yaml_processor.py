@@ -7,6 +7,7 @@ import os
 import yaml
 import re
 from typing import List, Dict, Optional
+from .path_helper import get_path_helper
 
 
 class CustomDumper(yaml.Dumper):
@@ -32,10 +33,13 @@ class YamlProcessor:
         Returns:
             List[Dict]: Danh sách segments với format [{id, title, content}, ...]
         """
-        if not os.path.exists(file_path):
+        ph = get_path_helper()
+        resolved_path = ph.resolve(file_path)
+        
+        if not ph.exists(resolved_path):
             raise FileNotFoundError(f"File không tồn tại: {file_path}")
         
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(resolved_path, 'r', encoding='utf-8') as f:
             data = yaml.safe_load(f)
         
         if not isinstance(data, list):
@@ -61,10 +65,11 @@ class YamlProcessor:
             data: Danh sách segments
             file_path: Đường dẫn file output
         """
+        ph = get_path_helper()
         # Tạo thư mục nếu chưa có
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        resolved_path = ph.ensure_dir(file_path, is_file=True)
         
-        with open(file_path, 'w', encoding='utf-8') as f:
+        with open(resolved_path, 'w', encoding='utf-8') as f:
             yaml.dump(data, f, allow_unicode=True, sort_keys=False, 
                      Dumper=CustomDumper, default_flow_style=False)
     
@@ -284,3 +289,199 @@ class YamlProcessor:
         filename = f"{date_part}_{time_part}_{sdk_type}_{base_name}{suffix}.yaml"
         
         return os.path.join(output_dir, filename)
+    
+    def create_temp_filename(self, base_name: str, temp_dir: str, sdk_type: str) -> str:
+        """
+        Tạo tên file temp để ghi incremental.
+        
+        Args:
+            base_name: Tên base của file
+            temp_dir: Thư mục temp
+            sdk_type: "gmn" hoặc "oai"
+        
+        Returns:
+            str: Đường dẫn file temp đầy đủ
+        """
+        from datetime import datetime
+        
+        now = datetime.now()
+        date_part = now.strftime("%d%m%y")
+        time_part = now.strftime("%H%M")
+        
+        filename = f"{date_part}_{time_part}_{sdk_type}_{base_name}_temp.yaml"
+        
+        # Tạo thư mục nếu chưa có
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        return os.path.join(temp_dir, filename)
+    
+    def append_segment_to_temp(self, segment: Dict, temp_file: str):
+        """
+        Ghi thêm một segment vào file temp (append mode).
+        Thread-safe cho concurrent writes.
+        
+        Args:
+            segment: Segment data
+            temp_file: Đường dẫn file temp
+        """
+        ph = get_path_helper()
+        resolved_temp = ph.resolve(temp_file)
+        
+        # Try import fcntl (chỉ có trên Unix/Linux)
+        try:
+            import fcntl
+            HAS_FCNTL = True
+        except ImportError:
+            HAS_FCNTL = False
+        
+        # Load existing data hoặc tạo mới
+        if os.path.exists(resolved_temp):
+            try:
+                with open(resolved_temp, 'r', encoding='utf-8') as f:
+                    # Lock file for reading (nếu có fcntl)
+                    if HAS_FCNTL:
+                        try:
+                            fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                            data = yaml.safe_load(f) or []
+                            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                        except (AttributeError, OSError):
+                            data = yaml.safe_load(f) or []
+                    else:
+                        # Windows: không có file locking
+                        data = yaml.safe_load(f) or []
+            except Exception:
+                data = []
+        else:
+            data = []
+        
+        # Append segment mới
+        data.append(segment)
+        
+        # Write lại toàn bộ file
+        ph.ensure_dir(resolved_temp, is_file=True)
+        with open(resolved_temp, 'w', encoding='utf-8') as f:
+            if HAS_FCNTL:
+                try:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                    yaml.dump(data, f, allow_unicode=True, sort_keys=False, 
+                             Dumper=CustomDumper, default_flow_style=False)
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                except (AttributeError, OSError):
+                    yaml.dump(data, f, allow_unicode=True, sort_keys=False, 
+                             Dumper=CustomDumper, default_flow_style=False)
+            else:
+                # Windows: không có file locking
+                yaml.dump(data, f, allow_unicode=True, sort_keys=False, 
+                         Dumper=CustomDumper, default_flow_style=False)
+    
+    def sort_by_original_order(self, translated_segments: List[Dict], 
+                               original_segments: List[Dict]) -> List[Dict]:
+        """
+        Sắp xếp translated segments theo thứ tự của original segments dựa vào field 'id'.
+        
+        Args:
+            translated_segments: Segments đã dịch (không đúng thứ tự)
+            original_segments: Segments gốc (đúng thứ tự)
+        
+        Returns:
+            List[Dict]: Translated segments đã được sắp xếp
+        """
+        # Tạo mapping id -> segment
+        translated_map = {seg['id']: seg for seg in translated_segments}
+        
+        # Sắp xếp theo thứ tự original
+        sorted_segments = []
+        for orig_seg in original_segments:
+            seg_id = orig_seg['id']
+            if seg_id in translated_map:
+                sorted_segments.append(translated_map[seg_id])
+            else:
+                # Nếu segment không được dịch, dùng original
+                sorted_segments.append(orig_seg)
+        
+        return sorted_segments
+    
+    def split_segments_by_volume(self, segments: List[Dict]) -> Dict[str, List[Dict]]:
+        """
+        Chia segments thành groups theo Volume.
+        
+        Args:
+            segments: Danh sách segments
+            
+        Returns:
+            Dict[batch_name, segments]: {
+                'Vol1': [segments of volume 1],
+                'Vol2': [segments of volume 2],
+                ...
+            }
+        """
+        volume_groups = {}
+        
+        for segment in segments:
+            volume, chapter = self.parse_chapter_info(segment.get('id', ''))
+            batch_name = f"Vol{volume}"
+            
+            if batch_name not in volume_groups:
+                volume_groups[batch_name] = []
+            
+            volume_groups[batch_name].append(segment)
+        
+        # Sort keys để đảm bảo thứ tự Volume
+        sorted_groups = {}
+        for key in sorted(volume_groups.keys(), key=lambda x: int(x.replace('Vol', ''))):
+            sorted_groups[key] = volume_groups[key]
+        
+        return sorted_groups
+    
+    def split_segments_by_chapter_range(self, segments: List[Dict], 
+                                       chapters_per_batch: int) -> Dict[str, List[Dict]]:
+        """
+        Chia segments thành groups theo chapter range.
+        
+        Args:
+            segments: Danh sách segments
+            chapters_per_batch: Số chapters mỗi batch (ví dụ: 100)
+            
+        Returns:
+            Dict[batch_name, segments]: {
+                'Ch001-100': [segments],
+                'Ch101-200': [segments],
+                ...
+            }
+        """
+        # Lấy danh sách unique chapters và segment tương ứng
+        chapter_to_segments = {}
+        
+        for segment in segments:
+            volume, chapter = self.parse_chapter_info(segment.get('id', ''))
+            
+            if chapter not in chapter_to_segments:
+                chapter_to_segments[chapter] = []
+            
+            chapter_to_segments[chapter].append(segment)
+        
+        # Sort chapters
+        sorted_chapters = sorted(chapter_to_segments.keys())
+        
+        if not sorted_chapters:
+            return {}
+        
+        # Group chapters thành batches
+        batch_groups = {}
+        
+        for chapter in sorted_chapters:
+            # Tính batch number (1-indexed)
+            batch_idx = (chapter - 1) // chapters_per_batch
+            start_chapter = batch_idx * chapters_per_batch + 1
+            end_chapter = start_chapter + chapters_per_batch - 1
+            
+            # Tạo batch name với zero-padding
+            batch_name = f"Ch{start_chapter:03d}-{end_chapter:03d}"
+            
+            if batch_name not in batch_groups:
+                batch_groups[batch_name] = []
+            
+            # Thêm tất cả segments của chapter này
+            batch_groups[batch_name].extend(chapter_to_segments[chapter])
+        
+        return batch_groups

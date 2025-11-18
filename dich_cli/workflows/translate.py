@@ -12,6 +12,7 @@ from typing import Dict, List, Tuple
 from core.ai_factory import AIClientFactory
 from core.yaml_processor import YamlProcessor
 from core.logger import Logger
+from core.path_helper import get_path_helper
 
 
 class TranslateWorkflow:
@@ -41,19 +42,12 @@ class TranslateWorkflow:
         # Get SDK code from factory
         self.sdk_code = AIClientFactory.get_sdk_code(config['translate_api'])
         
-        # Output files
-        self.output_file = self.processor.create_output_filename(
-            self.input_file, 
-            config['paths']['output_trans'],
-            self.sdk_code
-        )
+        # Batch processing setup
+        self.batch_mode = config.get('batch_processing', {}).get('enabled', False)
+        self.timestamp_folder_name = None  # Sẽ được tạo khi run batch mode
         
-        # Logger
-        self.logger = Logger(
-            config['paths']['log_trans'],
-            self.base_name,
-            self.sdk_code
-        )
+        # Temp file for incremental writes (được tạo lại mỗi batch)
+        self.temp_file = None
         
         print(f"🔧 SDK: {self.sdk_code.upper()}")
         print(f"🤖 Content Model: {self.client.get_model_name()}")
@@ -75,25 +69,33 @@ class TranslateWorkflow:
                 key_status = AIClientFactory.get_key_rotator_status()
                 title_keys = key_status.get(title_provider, {}).get('key_count', 1)
                 print(f"🔑 Title Keys: {title_keys} keys (round-robin)")
-        print(f"📝 Output: {self.output_file}")
-        print(f"📋 Log: {self.logger.get_log_path()}")
+        
+        # Mode info
+        if self.batch_mode:
+            batch_config = config['batch_processing']
+            mode = batch_config.get('mode', 'chapter')
+            size = batch_config.get('chapters_per_batch', 100)
+            print(f"📦 Batch Mode: {mode.upper()} ({size} chapters/batch)")
     
     def _load_prompt(self, prompt_file: str) -> str:
         """Load prompt từ file."""
-        if not os.path.exists(prompt_file):
+        ph = get_path_helper()
+        resolved_path = ph.resolve(prompt_file)
+        
+        if not ph.exists(resolved_path):
             raise FileNotFoundError(f"Prompt file không tồn tại: {prompt_file}")
         
-        with open(prompt_file, 'r', encoding='utf-8') as f:
+        with open(resolved_path, 'r', encoding='utf-8') as f:
             return f.read().strip()
     
     def run(self):
-        """Chạy workflow chính."""
+        """Chạy workflow chính - dispatch to batch or single file mode."""
         try:
-            # 1. Load và filter YAML
+            # Load và filter YAML
             print("\n📖 Đang load file YAML...")
             segments = self.processor.load_yaml(self.input_file)
             
-            # Filter theo filtering config mới
+            # Filter theo filtering config
             original_count = len(segments)
             segments = self.processor.filter_segments(
                 segments, self.config['filtering']
@@ -104,58 +106,259 @@ class TranslateWorkflow:
             
             print(f"📊 Tổng cộng {len(segments)} segments cần xử lý")
             
-            # 2. Dịch content trước
-            print("\n📝 Đang dịch content...")
-            translated_segments = self._translate_content(segments)
-            
-            # 3. Dịch titles sau (nếu enabled)
-            translated_titles = {}
-            if self.config['title_translation']['enabled'] and self.title_client:
-                print("\n🏷️ Đang dịch titles...")
-                translated_titles = self._translate_titles(segments)
-                print(f"✅ Đã dịch {len(translated_titles)} titles")
-            
-            # 4. Merge titles vào segments
-            if translated_titles:
-                print("\n🔄 Đang merge titles...")
-                self._merge_titles(translated_segments, translated_titles)
-            
-            # 5. Save temp file trước
-            temp_output_file = os.path.join(
-                os.path.dirname(self.output_file), 
-                f"temp_{os.path.basename(self.output_file)}"
-            )
-            print(f"\n💾 Đang save temp file: {os.path.basename(temp_output_file)}...")
-            self.processor.save_yaml(translated_segments, temp_output_file)
-            print(f"✅ Kết quả dịch thô lưu tại: {temp_output_file}")
-            
-            # 6. Clean từ temp file -> final file
-            print(f"\n🧹 Đang clean từ temp file...")
-            self._clean_yaml_file(temp_output_file, self.output_file)
-            print(f"✅ Clean hoàn thành! File cuối cùng: {self.output_file}")
-            
-            # 7. Xóa temp file
-            if os.path.exists(temp_output_file):
-                os.remove(temp_output_file)
-                print(f"🗑️ Đã xóa temp file: {os.path.basename(temp_output_file)}")
-            
-            # 8. Log summary - đếm từ logger stats
-            successful = self.logger.content_request_count  # Chỉ đếm content segments
-            failed = len(segments) - successful
-            self.logger.log_summary(
-                len(segments), successful, failed, self.client.get_model_name()
-            )
-            
-            print(f"\n🎉 HOÀN THÀNH!")
-            print(f"✅ Thành công: {successful}/{len(segments)} segments")
-            print(f"📁 Output: {self.output_file}")
-            print(f"📋 Log: {self.logger.get_log_path()}")
-            
+            # Dispatch theo mode
+            if self.batch_mode:
+                self._run_batch_mode(segments)
+            else:
+                self._run_single_file_mode(segments)
+                
         except Exception as e:
             print(f"❌ Lỗi trong translate workflow: {e}")
             raise
     
-    def _translate_titles(self, segments: List[Dict]) -> Dict[str, str]:
+    def _run_single_file_mode(self, segments: List[Dict]):
+        """Chạy workflow mode single file (logic cũ)."""
+        # Setup output và temp files
+        output_file = self.processor.create_output_filename(
+            self.input_file, 
+            self.config['paths']['output_trans'],
+            self.sdk_code
+        )
+        
+        self.temp_file = self.processor.create_temp_filename(
+            self.base_name,
+            self.config['paths']['temp_output'],
+            self.sdk_code
+        )
+        
+        # Setup logger (single file mode - không có timestamp folder)
+        logger = Logger(
+            self.config['paths']['log_trans'],
+            self.base_name,
+            self.sdk_code
+        )
+        
+        print(f"📝 Output: {output_file}")
+        print(f"💾 Temp: {self.temp_file}")
+        print(f"📋 Log: {logger.get_log_path()}")
+        
+        # Xóa temp file cũ nếu có
+        if os.path.exists(self.temp_file):
+            os.remove(self.temp_file)
+            print(f"🗑️ Đã xóa temp file cũ")
+        
+        # Dịch content
+        print("\n📝 Đang dịch content...")
+        self._translate_content(segments, logger)
+        print(f"✅ Đã dịch xong, đang load từ temp file...")
+        
+        # Load temp file và sort
+        translated_segments = self.processor.load_yaml(self.temp_file)
+        print(f"📊 Đang sắp xếp lại theo thứ tự gốc...")
+        translated_segments = self.processor.sort_by_original_order(
+            translated_segments, segments
+        )
+        
+        # Dịch titles (nếu enabled)
+        translated_titles = {}
+        if self.config['title_translation']['enabled'] and self.title_client:
+            print("\n🏷️ Đang dịch titles...")
+            translated_titles = self._translate_titles(segments, logger)
+            print(f"✅ Đã dịch {len(translated_titles)} titles")
+        
+        # Merge titles
+        if translated_titles:
+            print("\n🔄 Đang merge titles...")
+            self._merge_titles(translated_segments, translated_titles)
+        
+        # Clean
+        print(f"\n🧹 Đang clean và save final file...")
+        if self.config['cleaner']['enabled']:
+            for segment in translated_segments:
+                if 'content' in segment and segment['content']:
+                    segment['content'] = self.processor.clean_content(segment['content'])
+        
+        # Extract titles từ content
+        print(f"🏷️ Đang extract titles từ content đã dịch...")
+        extracted_count = self._extract_titles_from_content(translated_segments)
+        if extracted_count > 0:
+            print(f"✅ Đã extract {extracted_count} titles từ content")
+        
+        # Save final file
+        self.processor.save_yaml(translated_segments, output_file)
+        print(f"✅ Đã save final file: {output_file}")
+        
+        # Xóa temp file
+        if os.path.exists(self.temp_file):
+            os.remove(self.temp_file)
+            print(f"🗑️ Đã xóa temp file")
+        
+        # Log summary
+        successful = logger.content_request_count
+        failed = len(segments) - successful
+        logger.log_summary(
+            len(segments), successful, failed, self.client.get_model_name()
+        )
+        
+        print(f"\n🎉 HOÀN THÀNH!")
+        print(f"✅ Thành công: {successful}/{len(segments)} segments")
+        print(f"📁 Output: {output_file}")
+        print(f"📋 Log: {logger.get_log_path()}")
+    
+    def _run_batch_mode(self, segments: List[Dict]):
+        """Chạy workflow mode batch processing."""
+        from datetime import datetime
+        
+        # Tạo timestamp folder
+        now = datetime.now()
+        date_part = now.strftime("%d%m%y")
+        time_part = now.strftime("%H%M")
+        timestamp_folder_name = f"{date_part}_{time_part}_{self.sdk_code}_{self.base_name}"
+        
+        # Tạo output folder
+        output_folder = os.path.join(
+            self.config['paths']['output_trans'], 
+            timestamp_folder_name
+        )
+        os.makedirs(output_folder, exist_ok=True)
+        
+        # Tạo log folder
+        log_folder_path = os.path.join(
+            self.config['paths']['log_trans'],
+            timestamp_folder_name
+        )
+        os.makedirs(log_folder_path, exist_ok=True)
+        
+        print(f"\n📁 Session Folder: {timestamp_folder_name}")
+        print(f"📂 Output: {output_folder}")
+        print(f"📋 Logs: {log_folder_path}")
+        
+        # Split segments thành batches
+        batch_config = self.config['batch_processing']
+        if batch_config.get('mode') == 'volume':
+            batches = self.processor.split_segments_by_volume(segments)
+        else:
+            chapters_per_batch = batch_config.get('chapters_per_batch', 100)
+            batches = self.processor.split_segments_by_chapter_range(
+                segments, chapters_per_batch
+            )
+        
+        print(f"📊 Chia thành {len(batches)} batches: {list(batches.keys())}")
+        
+        # Process từng batch
+        total_successful = 0
+        total_failed = 0
+        batch_files = []
+        
+        for i, (batch_name, batch_segments) in enumerate(batches.items(), 1):
+            print(f"\n{'='*70}")
+            print(f"🚀 BATCH {i}/{len(batches)}: {batch_name}")
+            print(f"   Segments: {len(batch_segments)}")
+            print(f"{'='*70}")
+            
+            # Process batch
+            success_count, batch_file = self._process_batch(
+                batch_name, batch_segments, output_folder, timestamp_folder_name
+            )
+            
+            total_successful += success_count
+            total_failed += len(batch_segments) - success_count
+            batch_files.append(batch_file)
+            
+            print(f"✅ Batch {batch_name} hoàn thành!")
+        
+        # Summary tổng kết
+        print(f"\n{'='*70}")
+        print(f"🎉 HOÀN THÀNH TẤT CẢ {len(batches)} BATCHES!")
+        print(f"{'='*70}")
+        print(f"✅ Thành công: {total_successful} segments")
+        print(f"❌ Thất bại: {total_failed} segments")
+        print(f"\n📁 Output files ({len(batch_files)}):")
+        for file in batch_files:
+            print(f"   {file}")
+        print(f"\n📋 Log folder: {log_folder_path}")
+    
+    def _process_batch(self, batch_name: str, batch_segments: List[Dict], 
+                      output_folder: str, timestamp_folder_name: str) -> tuple:
+        """
+        Process một batch: dịch, clean, save.
+        
+        Returns:
+            (success_count, output_file_path)
+        """
+        # Setup temp file cho batch này
+        self.temp_file = self.processor.create_temp_filename(
+            f"{batch_name}_{self.base_name}",
+            self.config['paths']['temp_output'],
+            self.sdk_code
+        )
+        
+        # Setup logger cho batch (với timestamp folder)
+        logger = Logger(
+            self.config['paths']['log_trans'],
+            f"{batch_name}_{self.base_name}",
+            self.sdk_code,
+            timestamp_folder=timestamp_folder_name
+        )
+        
+        # Xóa temp file cũ
+        if os.path.exists(self.temp_file):
+            os.remove(self.temp_file)
+        
+        # Dịch content
+        print(f"📝 Đang dịch content...")
+        self._translate_content(batch_segments, logger)
+        
+        # Load và sort
+        translated_segments = self.processor.load_yaml(self.temp_file)
+        translated_segments = self.processor.sort_by_original_order(
+            translated_segments, batch_segments
+        )
+        
+        # Dịch titles (nếu enabled)
+        translated_titles = {}
+        if self.config['title_translation']['enabled'] and self.title_client:
+            print(f"🏷️ Đang dịch titles...")
+            translated_titles = self._translate_titles(batch_segments, logger)
+            if translated_titles:
+                print(f"✅ Đã dịch {len(translated_titles)} titles")
+        
+        # Merge titles
+        if translated_titles:
+            self._merge_titles(translated_segments, translated_titles)
+        
+        # Clean
+        if self.config['cleaner']['enabled']:
+            for segment in translated_segments:
+                if 'content' in segment and segment['content']:
+                    segment['content'] = self.processor.clean_content(segment['content'])
+        
+        # Extract titles từ content
+        extracted_count = self._extract_titles_from_content(translated_segments)
+        if extracted_count > 0:
+            print(f"✅ Đã extract {extracted_count} titles từ content")
+        
+        # Save batch file (naming: gmn_Ch001-100_real_game.yaml)
+        batch_filename = f"{self.sdk_code}_{batch_name}_{self.base_name}.yaml"
+        batch_output_path = os.path.join(output_folder, batch_filename)
+        self.processor.save_yaml(translated_segments, batch_output_path)
+        print(f"💾 Saved: {batch_filename}")
+        
+        # Xóa temp file
+        if os.path.exists(self.temp_file):
+            os.remove(self.temp_file)
+        
+        # Log summary cho batch
+        successful = logger.content_request_count
+        logger.log_summary(
+            len(batch_segments), successful, 
+            len(batch_segments) - successful, 
+            self.client.get_model_name()
+        )
+        
+        return successful, batch_output_path
+    
+    def _translate_titles(self, segments: List[Dict], logger: Logger) -> Dict[str, str]:
         """Dịch titles của các chapters unique bằng title client riêng."""
         # Lấy chapters unique
         unique_chapters = self.processor.get_unique_chapters(segments)
@@ -184,7 +387,7 @@ class TranslateWorkflow:
                 translated_title = content.strip().replace('"', '').replace('\\n', '\n')
                 translated_titles[chapter_id] = translated_title
                 
-                self.logger.log_segment(
+                logger.log_segment(
                     f"Title_{chapter_id}", "THÀNH CÔNG", 
                     token_info=token_info
                 )
@@ -194,7 +397,7 @@ class TranslateWorkflow:
                 
             except Exception as e:
                 print(f"❌ Lỗi dịch title {chapter_id}: {e}")
-                self.logger.log_segment(
+                logger.log_segment(
                     f"Title_{chapter_id}", "THẤT BẠI", str(e)
                 )
                 # Giữ nguyên title gốc
@@ -202,16 +405,15 @@ class TranslateWorkflow:
         
         return translated_titles
     
-    def _translate_content(self, segments: List[Dict]) -> List[Dict]:
-        """Dịch content của segments bằng threading."""
+    def _translate_content(self, segments: List[Dict], logger: Logger):
+        """Dịch content của segments bằng threading và ghi incremental vào temp file."""
         q = queue.Queue()
-        result_dict = {}
         lock = threading.Lock()
+        processed_count = {'value': 0}
         
         # Đưa segments vào queue
-        for idx, segment in enumerate(segments):
-            q.put((idx, segment))
-            result_dict[idx] = None
+        for segment in segments:
+            q.put(segment)
         
         # Threading config
         concurrent_requests = self.config['translate_api']['concurrent_requests']
@@ -224,7 +426,7 @@ class TranslateWorkflow:
         for _ in range(num_threads):
             t = threading.Thread(
                 target=self._content_worker,
-                args=(q, result_dict, lock, len(segments))
+                args=(q, lock, len(segments), processed_count, logger)
             )
             t.daemon = True
             t.start()
@@ -233,26 +435,19 @@ class TranslateWorkflow:
         # Đợi hoàn thành
         for t in threads:
             t.join()
-        
-        # Thu thập kết quả
-        results = []
-        for idx in sorted(result_dict.keys()):
-            if result_dict[idx] is not None:
-                results.append(result_dict[idx])
-        
-        return results
     
-    def _content_worker(self, q: queue.Queue, result_dict: Dict, 
-                       lock: threading.Lock, total_segments: int):
-        """Worker thread để dịch content."""
+    def _content_worker(self, q: queue.Queue, lock: threading.Lock, 
+                       total_segments: int, processed_count: Dict, logger: Logger):
+        """Worker thread để dịch content và ghi vào temp file."""
         while not q.empty():
             try:
-                idx, segment = q.get(block=False)
+                segment = q.get(block=False)
                 segment_id = segment['id']
                 
                 with lock:
-                    processed = len([v for v in result_dict.values() if v is not None])
-                    print(f"[{processed + 1}/{total_segments}] 📝 {segment_id}")
+                    processed_count['value'] += 1
+                    current = processed_count['value']
+                    print(f"[{current}/{total_segments}] 📝 {segment_id}")
                 
                 try:
                     # Dịch content
@@ -270,17 +465,18 @@ class TranslateWorkflow:
                         'content': content
                     }
                     
+                    # Ghi vào temp file ngay (thread-safe)
                     with lock:
-                        result_dict[idx] = translated_segment
-                        self.logger.log_segment(
+                        self.processor.append_segment_to_temp(translated_segment, self.temp_file)
+                        logger.log_segment(
                             segment_id, "THÀNH CÔNG", token_info=token_info
                         )
                 
                 except Exception as e:
                     with lock:
                         # Giữ segment gốc nếu lỗi
-                        result_dict[idx] = segment
-                        self.logger.log_segment(
+                        self.processor.append_segment_to_temp(segment, self.temp_file)
+                        logger.log_segment(
                             segment_id, "THẤT BẠI", str(e)
                         )
                 
@@ -305,29 +501,43 @@ class TranslateWorkflow:
                 if chapter_id in translated_titles:
                     segment['title'] = translated_titles[chapter_id]
     
-    def _clean_yaml_file(self, input_file: str, output_file: str):
-        """Clean YAML file theo pattern của file cũ: temp -> final."""
-        if not self.config['cleaner']['enabled']:
-            # Nếu không clean, chỉ rename
-            os.rename(input_file, output_file)
-            return
+    def _extract_titles_from_content(self, segments: List[Dict]) -> int:
+        """
+        Extract title từ dòng đầu của content đã dịch và update field title.
+        Đây là bước cleanup tự động sau khi dịch xong.
         
-        # Đọc temp file
-        temp_data = self.processor.load_yaml(input_file)
-        
-        # Clean từng segment
-        for segment in temp_data:
-            if 'content' in segment and segment['content']:
-                segment['content'] = self.processor.clean_content(segment['content'])
-        
-        # Ghi ra final file
-        self.processor.save_yaml(temp_data, output_file)
-    
-    def _clean_segments(self, segments: List[Dict]):
-        """Clean content của segments - deprecated, dùng _clean_yaml_file."""
-        if not self.config['cleaner']['enabled']:
-            return
+        Returns:
+            int: Số segments đã extract title
+        """
+        extracted = 0
         
         for segment in segments:
-            if 'content' in segment:
-                segment['content'] = self.processor.clean_content(segment['content'])
+            if 'content' not in segment or not segment['content']:
+                continue
+            
+            content = segment['content']
+            lines = content.split('\n')
+            
+            # Bỏ qua các dòng rỗng ở đầu
+            first_line_idx = 0
+            for i, line in enumerate(lines):
+                if line.strip():
+                    first_line_idx = i
+                    break
+            
+            if first_line_idx >= len(lines):
+                continue
+            
+            first_line = lines[first_line_idx].strip()
+            
+            # Loại bỏ dấu ' ở đầu nếu có (từ splitter)
+            if first_line.startswith("'"):
+                first_line = first_line[1:].strip()
+            
+            # Update title nếu có nội dung
+            if first_line:
+                segment['title'] = first_line
+                extracted += 1
+        
+        return extracted
+    

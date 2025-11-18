@@ -1,12 +1,13 @@
 {
+  "_comment": "Tất cả paths đều relative to project root",
   "series": [
     {
-      "name": "Shuba Novel",
+      "name": "",
       "parser": "shuba",
-      "json_mapping": "crawl_json/no_money_shuba.json",
-      "output_file": "data/no_money_shuba.txt",
+      "json_mapping": "",
+      "output_file": "",
       "start_chapter": 1,
-      "max_chapters": 900,
+      "max_chapters": 50,
       "enabled": true
     } 
   ],
@@ -19,6 +20,7 @@
     "retry_delay": 10,
     "resume_mode": true,
     "auto_resume": false,
-    "log_dir": "crawl/logs"
+    "log_dir": "test/python/crawl/logs",
+    "output_dir": "data/yaml/input"
   }
 } 

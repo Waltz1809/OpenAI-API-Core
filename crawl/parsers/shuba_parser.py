@@ -10,8 +10,15 @@ Parser chính cho www.69shuba.com sử dụng Playwright
 import re
 import json
 import os
+import sys
+from pathlib import Path
 from urllib.parse import urljoin
 from .base_parser import StandardParserMixin
+
+# Add dich_cli to path để sử dụng PathHelper
+project_root = Path(__file__).parent.parent.parent.parent.parent  # parsers -> crawl -> python -> test -> Dich
+sys.path.insert(0, str(project_root / "dich_cli"))
+from core.path_helper import get_path_helper  # type: ignore[import]
 
 
 class ShubaParser(StandardParserMixin):
@@ -217,14 +224,16 @@ class ShubaParser(StandardParserMixin):
         # Ưu tiên JSON mapping
         json_mapping = series_config.get('json_mapping')
         if json_mapping:
-            json_path = json_mapping
-            if not os.path.isabs(json_path):
-                # Relative path từ thư mục script
-                script_dir = os.path.dirname(os.path.abspath(__file__))
-                json_path = os.path.join(script_dir, '..', '..', json_mapping)
-                json_path = os.path.normpath(json_path)
+            # Sử dụng PathHelper để resolve path (tự động xử lý relative/absolute)
+            ph = get_path_helper()
+            json_path = ph.resolve(json_mapping)
             
-            print(f"  📖 Đọc JSON mapping: {json_path}")
+            if not os.path.exists(json_path):
+                print(f"  ❌ Không tìm thấy file JSON: {json_mapping}")
+                print(f"     Đã thử: {json_path}")
+                return []
+            
+            print(f"  📖 Đọc JSON mapping: {ph.relative_to_project(json_path)}")
             
             try:
                 with open(json_path, 'r', encoding='utf-8') as f:

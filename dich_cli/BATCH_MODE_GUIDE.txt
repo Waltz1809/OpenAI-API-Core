@@ -1,0 +1,190 @@
+================================================================================
+                     BATCH PROCESSING MODE - GUIDE
+================================================================================
+
+OVERVIEW
+--------
+Batch processing mode tự động chia file YAML lớn thành nhiều batches nhỏ,
+dịch từng batch riêng biệt và lưu thành nhiều files trong timestamp folder.
+
+Ưu điểm:
+- Memory-safe: chỉ xử lý 1 batch mỗi lần
+- Git-friendly: file nhỏ dễ track changes
+- IDE performance: load nhanh hơn
+- Tổ chức tốt: tất cả output trong 1 session folder
+
+
+CONFIGURATION
+-------------
+Trong config.json, thêm section:
+
+{
+  "batch_processing": {
+    "enabled": true,                    // Bật/tắt batch mode
+    "mode": "chapter",                  // "chapter" hoặc "volume"
+    "chapters_per_batch": 100,          // Số chapters mỗi batch
+    "create_timestamp_folder": true     // Tạo timestamp folder
+  }
+}
+
+
+MODE OPTIONS
+------------
+
+1. CHAPTER MODE (đề xuất)
+   - Chia theo số lượng chapters
+   - Config: "mode": "chapter", "chapters_per_batch": 100
+   - Output: Ch001-100, Ch101-200, Ch201-300, ...
+
+2. VOLUME MODE
+   - Chia theo Volume
+   - Config: "mode": "volume"
+   - Output: Vol1, Vol2, Vol3, ...
+
+
+OUTPUT STRUCTURE
+----------------
+
+Với batch mode ENABLED:
+
+data/yaml/output/WebNovel/real_game/
+  181125_1430_gmn_real_game/              <- Timestamp session folder
+    gmn_Ch001-100_real_game.yaml
+    gmn_Ch101-200_real_game.yaml
+    gmn_Ch201-300_real_game.yaml
+    ...
+
+data/result/translation_log/WebNovel/real_game/
+  181125_1430_gmn_real_game/              <- Matching log folder
+    gmn_Ch001-100_real_game.log
+    gmn_Ch101-200_real_game.log
+    gmn_Ch201-300_real_game.log
+    ...
+
+
+Với batch mode DISABLED (single file):
+
+data/yaml/output/WebNovel/real_game/
+  181125_1430_gmn_real_game.yaml          <- Single file với timestamp
+
+data/result/translation_log/WebNovel/real_game/
+  181125_1430_gmn_real_game.log
+
+
+NAMING CONVENTION
+-----------------
+
+Timestamp Folder: ddmmyy_hhmm_SDK_basename
+  Example: 181125_1430_gmn_real_game
+
+Batch Files: SDK_BatchName_basename.yaml
+  Example: gmn_Ch001-100_real_game.yaml
+           gmn_Vol1_real_game.yaml
+
+Log Files: SDK_BatchName_basename.log
+  Example: gmn_Ch001-100_real_game.log
+
+
+WORKFLOW PROCESS
+----------------
+
+1. Load source YAML (full file - để detect structure)
+2. Filter segments theo config
+3. Split segments thành batches
+4. FOR EACH BATCH:
+   4.1. Dịch content (threading như cũ)
+   4.2. Load temp → Sort
+   4.3. Dịch titles (nếu enabled)
+   4.4. Merge titles
+   4.5. Clean content
+   4.6. Extract titles from content
+   4.7. Save batch file
+   4.8. Delete temp file
+   4.9. Log summary
+5. Summary tổng kết tất cả batches
+
+
+USAGE EXAMPLE
+-------------
+
+# Enable batch mode
+Edit config.json:
+{
+  "batch_processing": {
+    "enabled": true,
+    "mode": "chapter",
+    "chapters_per_batch": 100
+  }
+}
+
+# Run workflow (chọn option 1 - Translate)
+python main.py
+
+# Output sẽ tự động được chia thành nhiều files trong timestamp folder
+
+
+MIGRATION FROM SINGLE FILE MODE
+--------------------------------
+
+Không cần thay đổi gì! Chỉ cần:
+1. Set "batch_processing.enabled": true trong config.json
+2. Chọn mode và batch size
+3. Run như bình thường
+
+Nếu muốn quay lại single file mode:
+1. Set "batch_processing.enabled": false
+2. Run như bình thường
+
+
+TROUBLESHOOTING
+---------------
+
+Q: Memory vẫn cao khi load file source?
+A: Normal. File chỉ được load 1 lần để detect structure. 
+   Processing thực tế chỉ xử lý 1 batch mỗi lần.
+
+Q: Có thể pause/resume giữa chừng?
+A: Hiện tại chưa support. Workflow sẽ chạy hết tất cả batches.
+   Future: có thể thêm resume feature.
+
+Q: Làm sao merge lại thành 1 file?
+A: Dùng tools/merge_yaml.py (nếu cần - chưa implement)
+   Hoặc cat thủ công: cat batch1.yaml batch2.yaml > merged.yaml
+
+
+PERFORMANCE NOTES
+-----------------
+
+Với file 1000 chapters:
+- Single mode: Load ~20-50MB YAML + process all → High memory
+- Batch mode (100/batch): 10 batches × ~2-5MB/batch → Low memory
+
+Git performance:
+- Single mode: 1 file ~50MB → Slow diff/commit
+- Batch mode: 10 files × ~5MB → Fast diff/commit
+
+
+RELATED TOOLS
+-------------
+
+1. extract_titles_quick.py (trong tools/)
+   - Extract titles từ content đã dịch
+   - Dùng sau khi workflow hoàn thành
+   - Chạy trên từng batch file riêng lẻ
+
+Usage:
+  cd dich_cli/tools
+  python extract_titles_quick.py <path_to_yaml> [--remove]
+
+
+CHANGELOG
+---------
+
+v1.0 - Initial batch processing implementation
+     - Support chapter mode và volume mode
+     - Auto timestamp folder creation
+     - Per-batch logging
+
+
+================================================================================
+

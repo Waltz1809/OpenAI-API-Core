@@ -15,44 +15,34 @@ from pathlib import Path
 import traceback
 import sys
 
+# Add dich_cli to path để sử dụng PathHelper
+project_root = Path(__file__).parent.parent.parent.parent  # test/python/splitter -> Dich
+sys.path.insert(0, str(project_root / "dich_cli"))
+
+from core.path_helper import get_path_helper  # type: ignore[import]
+
 # Import enhanced_chapter_splitter functions
-# Thêm đường dẫn tới splitter folder relative to script location
 script_dir = os.path.dirname(os.path.abspath(__file__))
-splitter_path = script_dir  # enhanced_chapter_splitter.py nằm cùng thư mục
-sys.path.append(splitter_path)
+sys.path.append(script_dir)
 from enhanced_chapter_splitter import split_and_output
 
 class AutoSplitter:
     def __init__(self, config_file=None):
         """Khởi tạo AutoSplitter với config file"""
+        self.ph = get_path_helper()
+        
         if config_file is None:
             # Tìm config.json trong cùng thư mục với script
             script_dir = os.path.dirname(os.path.abspath(__file__))
             config_file = os.path.join(script_dir, "config.json")
         
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
-        self.project_root = self._find_project_root()
         self.config = self.load_config(config_file)
         self.tracking_data = self.load_tracking()
     
-    def _find_project_root(self):
-        """Tìm project root directory (thư mục chứa test/, current_work/, etc.)"""
-        current_dir = self.script_dir
-        while current_dir != os.path.dirname(current_dir):  # Không phải root filesystem
-            # Kiểm tra các marker của project root
-            if all(os.path.exists(os.path.join(current_dir, marker)) 
-                   for marker in ['test', 'current_work']):
-                return current_dir
-            current_dir = os.path.dirname(current_dir)
-        
-        # Fallback: sử dụng thư mục hiện tại
-        return os.getcwd()
-    
     def _resolve_path(self, path):
         """Resolve path relative to project root"""
-        if os.path.isabs(path):
-            return path
-        return os.path.join(self.project_root, path)
+        return self.ph.resolve(path)
         
     def load_config(self, config_file):
         """Load configuration từ JSON file"""
@@ -212,11 +202,8 @@ class AutoSplitter:
         else:
             smart_filename = filename
         
-        # Create output filename with content type specific suffix
-        if mode_name == 'segment_mode':
-            suffix = type_config['segment_suffix']
-        else:  # context_mode
-            suffix = self.config['modes']['context_mode']['suffix']
+        # Create output filename with suffix from mode config
+        suffix = self.config['modes'][mode_name].get('suffix', 'context')
             
         output_filename = f"{smart_filename}_{suffix}.{self.config['global_settings']['output_format']}"
         
@@ -274,10 +261,8 @@ class AutoSplitter:
             
             # Get mode config from content type
             mode_config = self.config['modes'][mode_name]
-            if mode_name == 'segment_mode':
-                max_chars = type_config['segment_chars']
-            else:  # context_mode
-                max_chars = type_config['context_chars']
+            # Dùng context_chars cho tất cả modes (không còn segment_chars nữa)
+            max_chars = type_config.get('context_chars', 50000)
             
             # Call the splitter với sorting logic mới
             print(f"    🔄 Processing với sorting logic...")
@@ -417,18 +402,16 @@ class AutoSplitter:
                 status = "🆕" if needs_proc else "✅"
                 action = "sẽ tạo mới" if needs_proc else "đã tồn tại, skip"
                 
-                # Get suffix based on mode and content type
-                if mode_name == 'segment_mode':
-                    suffix = type_config['segment_suffix']
-                else:
-                    suffix = self.config['modes']['context_mode']['suffix']
+                # Get suffix and max_chars from mode and content type config
+                suffix = self.config['modes'][mode_name].get('suffix', 'context')
+                max_chars = type_config.get('context_chars', 50000)
                 
                 file_info['modes'].append({
                     'mode': mode_name,
                     'suffix': suffix,
                     'status': status,
                     'action': action,
-                    'max_chars': type_config['segment_chars'] if mode_name == 'segment_mode' else type_config['context_chars']
+                    'max_chars': max_chars
                 })
             
             preview_data[content_type][folder].append(file_info)
@@ -506,12 +489,13 @@ class AutoSplitter:
         # Print content types info
         base_input = self._resolve_path(self.config['input_base_dir'])
         base_output = self._resolve_path(self.config['output_base_dir'])
-        print(f"📍 Project Root: {self.project_root}")
+        print(f"📍 Project Root: {self.ph.project_root}")
         print(f"📁 Content Types:")
         for content_type, type_config in self.config['content_types'].items():
             input_dir = os.path.join(base_input, type_config['input_subdir'])
             output_dir = os.path.join(base_output, type_config['output_subdir'])
-            print(f"  📚 {content_type}: {type_config['segment_chars']}chars → {input_dir}")
+            max_chars = type_config.get('context_chars', 50000)
+            print(f"  📚 {content_type}: max {max_chars} chars/chapter → {input_dir}")
             print(f"    Output: {output_dir}")
         
         if self.config['run_settings']['dry_run']:

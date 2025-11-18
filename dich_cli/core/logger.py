@@ -6,26 +6,32 @@ Logger module với naming convention: ddmmyy_giờ_SDK_tên.log
 import os
 from datetime import datetime
 from typing import Optional
+from .path_helper import get_path_helper
 
 
 class Logger:
     """Logger với smart naming convention và token tracking."""
     
-    def __init__(self, log_dir: str, base_name: str, sdk_type: str, mode: str = "translate"):
+    def __init__(self, log_dir: str, base_name: str, sdk_type: str, mode: str = "translate",
+                 timestamp_folder: Optional[str] = None):
         """
         Args:
-            log_dir: Thư mục chứa log files
+            log_dir: Thư mục chứa log files (relative to project root)
             base_name: Tên base từ input file
             sdk_type: "gmn" (Gemini) hoặc "oai" (OpenAI)
             mode: "translate", "retry", "context"
+            timestamp_folder: Optional subfolder name (cho batch mode)
         """
-        self.log_dir = log_dir
+        ph = get_path_helper()
+        
+        # Nếu có timestamp_folder, thêm vào log_dir
+        if timestamp_folder:
+            log_dir = os.path.join(log_dir, timestamp_folder)
+        
+        self.log_dir = ph.ensure_dir(log_dir)
         self.base_name = base_name
         self.sdk_type = sdk_type
         self.mode = mode
-        
-        # Tạo thư mục nếu chưa có
-        os.makedirs(log_dir, exist_ok=True)
         
         # Tạo tên file theo format: ddmmyy_giờ_SDK_tên.log
         now = datetime.now()
@@ -38,10 +44,13 @@ class Logger:
         else:
             suffix = ""
 
-        self.log_file = os.path.join(
-            log_dir,
-            f"{date_part}_{time_part}_{sdk_type}_{base_name}{suffix}.log"
-        )
+        # Nếu có timestamp_folder (batch mode), không thêm timestamp vào tên file
+        if timestamp_folder:
+            filename = f"{sdk_type}_{base_name}{suffix}.log"
+        else:
+            filename = f"{date_part}_{time_part}_{sdk_type}_{base_name}{suffix}.log"
+
+        self.log_file = os.path.join(log_dir, filename)
         
         # Token tracking - Simplified (loại bỏ cache tokens không sử dụng)
         self.total_tokens = {

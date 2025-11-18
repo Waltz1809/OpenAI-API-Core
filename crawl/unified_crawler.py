@@ -14,6 +14,7 @@ import re
 import logging
 import yaml
 from datetime import datetime
+from pathlib import Path
 from playwright.sync_api import sync_playwright
 from parsers.tw_parser import TWLinovelibParser
 from parsers.hjwzw_parser import HjwzwParser
@@ -29,6 +30,11 @@ from chapter_detection import enhance_chapter_detection
 from clean_logger import CleanLogger, PiaotiaLogger
 import sys
 
+# Add dich_cli to path để sử dụng PathHelper
+project_root = Path(__file__).parent.parent.parent.parent  # test/python/crawl -> Dich
+sys.path.insert(0, str(project_root / "dich_cli"))
+from core.path_helper import get_path_helper  # type: ignore[import]
+
 
 class UnifiedCrawler:
     """Main crawler với config và retry mechanism"""
@@ -38,6 +44,7 @@ class UnifiedCrawler:
         Args:
             config_file: Đường dẫn đến file config JSON
         """
+        self.ph = get_path_helper()
         self.config_file = config_file
         self.config = self.load_config()
         self.settings = self.config.get('settings', {})
@@ -319,12 +326,10 @@ class UnifiedCrawler:
 
                 output_file = series.get('output_file', f"{series['name']}.txt")
 
-                # Đảm bảo thư mục tồn tại
-                output_dir = os.path.dirname(output_file)
-                if output_dir and not os.path.exists(output_dir):
-                    os.makedirs(output_dir, exist_ok=True)
-                    print(f"📁 Tạo thư mục: {output_dir}")
-                    self.logger.info(f"📁 Tạo thư mục: {output_dir}")
+                # Đảm bảo thư mục tồn tại (sử dụng PathHelper)
+                resolved_output = self.ph.ensure_dir(output_file, is_file=True)
+                print(f"📁 Output: {self.ph.relative_to_project(resolved_output)}")
+                self.logger.info(f"📁 Output: {resolved_output}")
 
                 # JSON-only approach: tất cả parsers đều dùng JSON mapping
                 json_mapping = series.get('json_mapping')
@@ -408,7 +413,7 @@ class UnifiedCrawler:
                 self.logger.info(f"🎯 Sẽ crawl từ index {start_index} đến {end_index-1} (tổng {end_index-start_index} chapters)")
 
                 try:
-                    with open(output_file, file_mode, encoding='utf-8') as f:
+                    with open(resolved_output, file_mode, encoding='utf-8') as f:
                         if file_mode == 'w':
                             f.write(f"=== {series['name']} ===\n\n")
 
@@ -427,7 +432,7 @@ class UnifiedCrawler:
 
                             # Sử dụng chapter_num từ JSON mapping, fallback về index + 1
                             actual_chapter_num = chapter_num if chapter_num is not None else (idx + 1)
-                            chapter_info = f"Chapter {actual_chapter_num}"
+                            chapter_info = f"Chương {actual_chapter_num}"
                             print(f"📖 Crawl {chapter_info} ({len(urls)} URLs): {chapter_title}")
                             self.logger.info(f"📖 Crawl {chapter_info} ({len(urls)} URLs): {chapter_title}")
 
@@ -552,11 +557,13 @@ class UnifiedCrawler:
             
             # Setup output file
             output_dir = self.settings.get('output_dir', 'output')
-            os.makedirs(output_dir, exist_ok=True)
             
             # Tạo tên file YAML
             safe_name = re.sub(r'[^\w\-_\.]', '_', series['name'])
             output_file = os.path.join(output_dir, f"{safe_name}.yaml")
+            
+            # Ensure directory exists
+            resolved_output = self.ph.ensure_dir(output_file, is_file=True)
             
             # JSON-only approach: tất cả parsers đều dùng JSON mapping
             json_mapping = series.get('json_mapping')
@@ -630,7 +637,7 @@ class UnifiedCrawler:
                     chapter_title = ''
                 
                 actual_chapter_num = chapter_num if chapter_num is not None else (idx + 1)
-                chapter_info = f"Chapter {actual_chapter_num}"
+                chapter_info = f"Chương {actual_chapter_num}"
                 print(f"📖 Crawl {chapter_info} ({len(urls)} URLs): {chapter_title}")
                 
                 # Crawl tất cả URLs và merge content
@@ -692,7 +699,7 @@ class UnifiedCrawler:
                 segment_id = f"Chapter_{actual_chapter_num}_Segment_1"
                 chapter_data = {
                     "id": segment_id,
-                    "title": merged_title or f"Chapter {actual_chapter_num}",
+                    "title": merged_title or f"Chương {actual_chapter_num}",
                     "content": clean_content
                 }
                 
@@ -714,8 +721,8 @@ class UnifiedCrawler:
                 yaml_segments.append(chapter_info['data'])
             
             # Ghi YAML file
-            print(f"💾 Ghi YAML file: {output_file}")
-            with open(output_file, 'w', encoding='utf-8') as f:
+            print(f"💾 Ghi YAML file: {self.ph.relative_to_project(resolved_output)}")
+            with open(resolved_output, 'w', encoding='utf-8') as f:
                 yaml.dump(yaml_segments, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
             
             completion_msg = f"🎉 Hoàn thành {series['name']}: {len(yaml_segments)} chapters -> {output_file}"

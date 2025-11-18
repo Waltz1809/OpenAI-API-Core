@@ -1,30 +1,30 @@
 {
   "active_task": {
     "task_name": "Dịch văn bản",
-    "source_yaml_file": "data/no_money/no_money_context.yaml"
+    "source_yaml_file": ".yaml"
   },
   
-  "retry_log_file": "LATEST/file.log mới nhất",
-  "retry_output_file": "File cần patch (.yaml)", 
+  "retry_log_file": ".log",
+  "retry_output_file": ".yaml", 
   
   "translate_api": {
     "provider": "gemini",
-    "model": "gemini-2.5-pro",
-    "temperature": 1.3,
-    "concurrent_requests": 27,
-    "max_tokens": 15000,
+    "model": "gemini-2.5-flash",
+    "temperature": 1.2,
+    "concurrent_requests": 80,
+    "max_tokens": 25000,
     "thinking_budget": 1500,
-    "delay": 45
+    "delay": 30
   },
   
   "retry_api": {
-    "provider": "openai",
-    "model": "deepseek-reasoner",
+    "provider": "gemini",
+    "model": "gemini-2.5-pro",
     "temperature": 1.3,
-    "concurrent_requests": 4,
+    "concurrent_requests": 40,
     "max_tokens": 15000,
     "thinking_budget": 1500,
-    "max_retries": 3,
+    "max_retries": 2,
     "delay": 60
   },
   
@@ -38,12 +38,13 @@
   },
   
   "paths": {
-    "output_trans": "nơi lưu file output.yaml",
-    "log_trans": "log",
-    "context_dir": "nơi lưu file context.yaml, lưu ý là dẫn folder",
-    "prompt_file": "file prompt",
-    "title_prompt_file": "prompt cho title",
-    "context_prompt_file": "prompt phân tích context"
+    "output_trans": "",
+    "log_trans": "",
+    "context_dir": "",
+    "temp_output": "temp",
+    "prompt_file": ".txt",
+    "title_prompt_file": ".txt",
+    "context_prompt_file": ".txt"
   },
   
   "title_api": {
@@ -57,7 +58,7 @@
   },
   
   "title_translation": {
-    "enabled": true
+    "enabled": false
   },
   
   "filtering": {
@@ -66,8 +67,8 @@
       "enabled": true,
       "start_volume": 0,
       "end_volume": 999,
-      "start_chapter": 0,
-      "end_chapter": 999
+      "start_chapter": 1,
+      "end_chapter": 103
     },
     "segment_range": {
       "enabled": false,
@@ -79,5 +80,12 @@
   "cleaner": {
     "enabled": true,
     "remove_thinking_blocks": false
+  },
+  
+  "batch_processing": {
+    "enabled": false,
+    "mode": "chapter",
+    "chapters_per_batch": 100,
+    "create_timestamp_folder": true
   }
 }

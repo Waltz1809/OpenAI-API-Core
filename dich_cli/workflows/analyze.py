@@ -12,6 +12,7 @@ from typing import Dict, List
 from core.ai_factory import AIClientFactory
 from core.yaml_processor import YamlProcessor
 from core.logger import Logger
+from core.path_helper import get_path_helper
 
 
 class AnalyzeWorkflow:
@@ -44,6 +45,13 @@ class AnalyzeWorkflow:
             self.sdk_code,
             "context"
         )
+        
+        # Temp file for incremental writes
+        self.temp_file = self.processor.create_temp_filename(
+            f"{self.base_name}_context",
+            config['paths']['temp_output'],
+            self.sdk_code
+        )
 
         # Logger (cũng save trong context_subdir)
         self.logger = Logger(
@@ -56,14 +64,18 @@ class AnalyzeWorkflow:
         print(f"🔧 Context SDK: {self.sdk_code.upper()}")
         print(f"🤖 Context Model: {self.client.get_model_name()}")
         print(f"📝 Output: {self.output_file}")
+        print(f"💾 Temp: {self.temp_file}")
         print(f"📋 Log: {self.logger.get_log_path()}")
     
     def _load_prompt(self, prompt_file: str) -> str:
         """Load prompt từ file."""
-        if not os.path.exists(prompt_file):
+        ph = get_path_helper()
+        resolved_path = ph.resolve(prompt_file)
+        
+        if not ph.exists(resolved_path):
             raise FileNotFoundError(f"Context prompt file không tồn tại: {prompt_file}")
 
-        with open(prompt_file, 'r', encoding='utf-8') as f:
+        with open(resolved_path, 'r', encoding='utf-8') as f:
             return f.read().strip()
     
     def run(self):
@@ -84,28 +96,43 @@ class AnalyzeWorkflow:
             
             print(f"📊 Tổng cộng {len(segments)} segments cần phân tích")
             
-            # 2. Phân tích ngữ cảnh
+            # 2. Xóa temp file cũ nếu có
+            if os.path.exists(self.temp_file):
+                os.remove(self.temp_file)
+                print(f"🗑️ Đã xóa temp file cũ")
+            
+            # 3. Phân tích ngữ cảnh (ghi incremental vào temp file)
             print("\n🔍 Đang phân tích ngữ cảnh...")
-            analyzed_segments = self._analyze_segments(segments)
+            self._analyze_segments(segments)
+            print(f"✅ Đã phân tích xong, đang load từ temp file...")
             
-            # 3. Save temp file trước
-            temp_output_file = os.path.join(
-                os.path.dirname(self.output_file), 
-                f"temp_{os.path.basename(self.output_file)}"
+            # 4. Load temp file và sort theo thứ tự gốc
+            analyzed_segments = self.processor.load_yaml(self.temp_file)
+            print(f"📊 Đang sắp xếp lại theo thứ tự gốc...")
+            analyzed_segments = self.processor.sort_by_original_order(
+                analyzed_segments, segments
             )
-            print(f"\n💾 Đang save temp file: {os.path.basename(temp_output_file)}...")
-            self.processor.save_yaml(analyzed_segments, temp_output_file)
-            print(f"✅ Kết quả phân tích thô lưu tại: {temp_output_file}")
             
-            # 4. Clean từ temp file -> final file
-            print(f"\n🧹 Đang clean từ temp file...")
-            self._clean_yaml_file(temp_output_file, self.output_file)
-            print(f"✅ Clean hoàn thành! File cuối cùng: {self.output_file}")
+            # 5. Clean và save final file
+            print(f"\n🧹 Đang clean và save final file...")
+            if self.config['cleaner']['enabled']:
+                for segment in analyzed_segments:
+                    if 'content' in segment and segment['content']:
+                        segment['content'] = self.processor.clean_content(segment['content'])
             
-            # 5. Xóa temp file
-            if os.path.exists(temp_output_file):
-                os.remove(temp_output_file)
-                print(f"🗑️ Đã xóa temp file: {os.path.basename(temp_output_file)}")
+            # 5.1. Extract titles từ content (nếu context có dịch title)
+            print(f"🏷️ Đang extract titles từ content...")
+            extracted_count = self._extract_titles_from_content(analyzed_segments)
+            if extracted_count > 0:
+                print(f"✅ Đã extract {extracted_count} titles từ content")
+            
+            self.processor.save_yaml(analyzed_segments, self.output_file)
+            print(f"✅ Đã save final file: {self.output_file}")
+            
+            # 6. Xóa temp file
+            if os.path.exists(self.temp_file):
+                os.remove(self.temp_file)
+                print(f"🗑️ Đã xóa temp file")
             
             # 6. Log summary - đếm từ logger stats
             successful = self.logger.request_count  # Số request thành công (có token_info)
@@ -114,8 +141,23 @@ class AnalyzeWorkflow:
                 len(segments), successful, failed, self.client.get_model_name()
             )
             
+            # 7. Log failed segments (để có thể retry sau)
+            if failed > 0:
+                print(f"⚠️ Có {failed} segments thất bại")
+                analyzed_ids = {seg['id'] for seg in analyzed_segments if 'id' in seg}
+                original_ids = {seg['id'] for seg in segments if 'id' in seg}
+                failed_ids = original_ids - analyzed_ids
+                
+                if failed_ids:
+                    self.logger.log_message(
+                        f"Failed segments: {', '.join(sorted(failed_ids))}",
+                        "ERROR"
+                    )
+            
             print(f"\n🎉 PHÂN TÍCH HOÀN THÀNH!")
             print(f"✅ Thành công: {successful}/{len(segments)} segments")
+            if failed > 0:
+                print(f"⚠️ Thất bại: {failed} segments (xem log để retry)")
             print(f"📁 Output: {self.output_file}")
             print(f"📋 Log: {self.logger.get_log_path()}")
             
@@ -123,16 +165,15 @@ class AnalyzeWorkflow:
             print(f"❌ Lỗi trong analyze workflow: {e}")
             raise
     
-    def _analyze_segments(self, segments: List[Dict]) -> List[Dict]:
-        """Phân tích ngữ cảnh của segments bằng threading."""
+    def _analyze_segments(self, segments: List[Dict]):
+        """Phân tích ngữ cảnh của segments bằng threading và ghi incremental vào temp file."""
         q = queue.Queue()
-        result_dict = {}
         lock = threading.Lock()
+        processed_count = {'value': 0}
         
         # Đưa segments vào queue
-        for idx, segment in enumerate(segments):
-            q.put((idx, segment))
-            result_dict[idx] = None
+        for segment in segments:
+            q.put(segment)
         
         # Threading config
         concurrent_requests = self.config['context_api']['concurrent_requests']
@@ -145,7 +186,7 @@ class AnalyzeWorkflow:
         for _ in range(num_threads):
             t = threading.Thread(
                 target=self._analysis_worker,
-                args=(q, result_dict, lock, len(segments))
+                args=(q, lock, len(segments), processed_count)
             )
             t.daemon = True
             t.start()
@@ -154,26 +195,19 @@ class AnalyzeWorkflow:
         # Đợi hoàn thành
         for t in threads:
             t.join()
-        
-        # Thu thập kết quả
-        results = []
-        for idx in sorted(result_dict.keys()):
-            if result_dict[idx] is not None:
-                results.append(result_dict[idx])
-        
-        return results
     
-    def _analysis_worker(self, q: queue.Queue, result_dict: Dict, 
-                        lock: threading.Lock, total_segments: int):
-        """Worker thread để phân tích context."""
+    def _analysis_worker(self, q: queue.Queue, lock: threading.Lock, 
+                        total_segments: int, processed_count: Dict):
+        """Worker thread để phân tích context và ghi vào temp file."""
         while not q.empty():
             try:
-                idx, segment = q.get(block=False)
+                segment = q.get(block=False)
                 segment_id = segment['id']
                 
                 with lock:
-                    processed = len([v for v in result_dict.values() if v is not None])
-                    print(f"[{processed + 1}/{total_segments}] 🔍 {segment_id}")
+                    processed_count['value'] += 1
+                    current = processed_count['value']
+                    print(f"[{current}/{total_segments}] 🔍 {segment_id}")
                 
                 try:
                     # Phân tích context
@@ -191,8 +225,9 @@ class AnalyzeWorkflow:
                         'content': analysis  # Replace content với analysis
                     }
                     
+                    # Ghi vào temp file ngay (thread-safe)
                     with lock:
-                        result_dict[idx] = analyzed_segment
+                        self.processor.append_segment_to_temp(analyzed_segment, self.temp_file)
                         self.logger.log_segment(
                             segment_id, "THÀNH CÔNG", token_info=token_info
                         )
@@ -200,7 +235,7 @@ class AnalyzeWorkflow:
                 except Exception as e:
                     with lock:
                         # Giữ segment gốc nếu lỗi
-                        result_dict[idx] = segment
+                        self.processor.append_segment_to_temp(segment, self.temp_file)
                         self.logger.log_segment(
                             segment_id, "THẤT BẠI", str(e)
                         )
@@ -213,29 +248,42 @@ class AnalyzeWorkflow:
             except queue.Empty:
                 break
     
-    def _clean_yaml_file(self, input_file: str, output_file: str):
-        """Clean YAML file theo pattern của file cũ: temp -> final."""
-        if not self.config['cleaner']['enabled']:
-            # Nếu không clean, chỉ rename
-            os.rename(input_file, output_file)
-            return
+    def _extract_titles_from_content(self, segments: List[Dict]) -> int:
+        """
+        Extract title từ dòng đầu của content và update field title.
+        Dùng cho context analysis nếu có dịch title trong content.
         
-        # Đọc temp file
-        temp_data = self.processor.load_yaml(input_file)
-        
-        # Clean từng segment
-        for segment in temp_data:
-            if 'content' in segment and segment['content']:
-                segment['content'] = self.processor.clean_content(segment['content'])
-        
-        # Ghi ra final file
-        self.processor.save_yaml(temp_data, output_file)
-    
-    def _clean_segments(self, segments: List[Dict]):
-        """Clean content của segments - deprecated, dùng _clean_yaml_file."""
-        if not self.config['cleaner']['enabled']:
-            return
+        Returns:
+            int: Số segments đã extract title
+        """
+        extracted = 0
         
         for segment in segments:
-            if 'content' in segment:
-                segment['content'] = self.processor.clean_content(segment['content'])
+            if 'content' not in segment or not segment['content']:
+                continue
+            
+            content = segment['content']
+            lines = content.split('\n')
+            
+            # Bỏ qua các dòng rỗng ở đầu
+            first_line_idx = 0
+            for i, line in enumerate(lines):
+                if line.strip():
+                    first_line_idx = i
+                    break
+            
+            if first_line_idx >= len(lines):
+                continue
+            
+            first_line = lines[first_line_idx].strip()
+            
+            # Loại bỏ dấu ' ở đầu nếu có (từ splitter)
+            if first_line.startswith("'"):
+                first_line = first_line[1:].strip()
+            
+            # Update title nếu có nội dung
+            if first_line:
+                segment['title'] = first_line
+                extracted += 1
+        
+        return extracted

@@ -8,7 +8,14 @@ Cung cấp standard interface cho tất cả parsers với JSON-only approach
 
 import os
 import json
+import sys
+from pathlib import Path
 from abc import ABC, abstractmethod
+
+# Add dich_cli to path để sử dụng PathHelper
+project_root = Path(__file__).parent.parent.parent.parent.parent  # parsers -> crawl -> python -> test -> Dich
+sys.path.insert(0, str(project_root / "dich_cli"))
+from core.path_helper import get_path_helper  # type: ignore[import]
 
 
 class BaseParser(ABC):
@@ -26,34 +33,23 @@ class BaseParser(ABC):
         Load chapter mapping từ JSON file - STANDARD cho tất cả parsers
         
         Args:
-            json_file_path (str): Path đến file JSON
+            json_file_path (str): Path đến file JSON (relative to project root hoặc absolute)
             
         Returns:
             dict: Mapping từ index -> {title, url}
             Format: {1: {'title': 'Chapter 1', 'url': 'http://...'}}
         """
         try:
-            # Tìm file JSON từ nhiều locations
-            possible_paths = [
-                json_file_path,
-                os.path.join(os.getcwd(), json_file_path),
-                os.path.join(os.path.dirname(__file__), '..', '..', '..', json_file_path),
-                os.path.join(os.path.dirname(__file__), '..', '..', json_file_path),
-                os.path.join(os.path.dirname(__file__), '..', json_file_path)
-            ]
+            # Sử dụng PathHelper để resolve path (tự động xử lý relative/absolute)
+            ph = get_path_helper()
+            json_path = ph.resolve(json_file_path)
             
-            json_path = None
-            for path in possible_paths:
-                abs_path = os.path.abspath(path)
-                if os.path.exists(abs_path):
-                    json_path = abs_path
-                    break
-            
-            if not json_path:
+            if not os.path.exists(json_path):
                 print(f"❌ Không tìm thấy file JSON: {json_file_path}")
+                print(f"   Đã thử: {json_path}")
                 return {}
             
-            print(f"📂 Loading JSON: {json_path}")
+            print(f"📂 Loading JSON: {ph.relative_to_project(json_path)}")
             
             with open(json_path, 'r', encoding='utf-8') as f:
                 chapters = json.load(f)

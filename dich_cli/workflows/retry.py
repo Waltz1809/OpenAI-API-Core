@@ -14,6 +14,7 @@ from datetime import datetime
 from core.ai_factory import AIClientFactory
 from core.yaml_processor import YamlProcessor
 from core.logger import Logger
+from core.path_helper import get_path_helper
 
 
 class RetryWorkflow:
@@ -39,6 +40,13 @@ class RetryWorkflow:
         sdk_mapping = {'openai': 'oai', 'gemini': 'gmn', 'vertex': 'vtx'}
         self.sdk_code = sdk_mapping.get(provider, 'oai')
         
+        # Temp file for incremental writes
+        self.temp_file = self.processor.create_temp_filename(
+            f"{self.base_name}_retry",
+            config['paths']['temp_output'],
+            self.sdk_code
+        )
+        
         # Logger
         self.logger = Logger(
             config['paths']['log_trans'],
@@ -49,14 +57,18 @@ class RetryWorkflow:
         
         print(f"🔧 Retry SDK: {self.sdk_code.upper()}")
         print(f"🤖 Retry Model: {self.client.get_model_name()}")
+        print(f"💾 Temp: {self.temp_file}")
         print(f"📋 Log: {self.logger.get_log_path()}")
     
     def _load_prompt(self, prompt_file: str) -> str:
         """Load prompt từ file."""
-        if not os.path.exists(prompt_file):
+        ph = get_path_helper()
+        resolved_path = ph.resolve(prompt_file)
+        
+        if not ph.exists(resolved_path):
             raise FileNotFoundError(f"Prompt file không tồn tại: {prompt_file}")
         
-        with open(prompt_file, 'r', encoding='utf-8') as f:
+        with open(resolved_path, 'r', encoding='utf-8') as f:
             return f.read().strip()
     
     def run(self):
@@ -90,17 +102,29 @@ class RetryWorkflow:
             print("📖 Load segments gốc...")
             original_segments = self.processor.load_yaml(self.input_file)
             
-            # 5. Retry dịch các segments thất bại
-            print(f"🔄 Bắt đầu retry {len(failed_segments)} segments...")
-            fixed_segments = self._retry_segments(failed_segments, original_segments)
+            # 5. Xóa temp file cũ nếu có
+            if os.path.exists(self.temp_file):
+                os.remove(self.temp_file)
             
-            if not fixed_segments:
+            # 6. Retry dịch các segments thất bại (ghi incremental vào temp)
+            print(f"🔄 Bắt đầu retry {len(failed_segments)} segments...")
+            self._retry_segments(failed_segments, original_segments)
+            
+            # 7. Load temp file
+            if not os.path.exists(self.temp_file):
                 print("❌ Không có segment nào được sửa thành công!")
                 return
             
-            # 6. Patch file output
+            fixed_segments = self.processor.load_yaml(self.temp_file)
+            print(f"✅ Đã retry xong {len(fixed_segments)} segments")
+            
+            # 8. Patch file output
             print(f"🔧 Patch {len(fixed_segments)} segments vào file...")
             self._patch_output_file(output_file, fixed_segments)
+            
+            # 9. Xóa temp file
+            if os.path.exists(self.temp_file):
+                os.remove(self.temp_file)
             
             # 7. Log summary
             self.logger.log_summary(
@@ -256,8 +280,8 @@ class RetryWorkflow:
         return latest_output
     
     def _retry_segments(self, failed_segment_ids: List[str], 
-                       original_segments: List[Dict]) -> List[Dict]:
-        """Retry dịch các segments thất bại."""
+                       original_segments: List[Dict]):
+        """Retry dịch các segments thất bại và ghi vào temp file."""
         # Tìm segments gốc tương ứng
         segments_to_retry = []
         for segment_id in failed_segment_ids:
@@ -267,16 +291,15 @@ class RetryWorkflow:
                     break
         
         if not segments_to_retry:
-            return []
+            return
         
         # Threading setup
         q = queue.Queue()
-        result_dict = {}
         lock = threading.Lock()
+        processed_count = {'value': 0}
         
-        for idx, segment in enumerate(segments_to_retry):
-            q.put((idx, segment))
-            result_dict[idx] = None
+        for segment in segments_to_retry:
+            q.put(segment)
         
         # Retry với threading
         concurrent_requests = self.config['retry_api']['concurrent_requests']
@@ -286,7 +309,7 @@ class RetryWorkflow:
         for _ in range(num_threads):
             t = threading.Thread(
                 target=self._retry_worker,
-                args=(q, result_dict, lock, len(segments_to_retry))
+                args=(q, lock, len(segments_to_retry), processed_count)
             )
             t.daemon = True
             t.start()
@@ -294,32 +317,26 @@ class RetryWorkflow:
         
         for t in threads:
             t.join()
-        
-        # Thu thập kết quả thành công
-        results = []
-        for idx in sorted(result_dict.keys()):
-            if result_dict[idx] is not None:
-                results.append(result_dict[idx])
-        
-        return results
     
-    def _retry_worker(self, q: queue.Queue, result_dict: Dict,
-                     lock: threading.Lock, total_segments: int):
-        """Worker thread cho retry."""
+    def _retry_worker(self, q: queue.Queue, lock: threading.Lock, 
+                     total_segments: int, processed_count: Dict):
+        """Worker thread cho retry và ghi vào temp file."""
         max_retries = self.config['retry_api'].get('max_retries', 3)
         
         while not q.empty():
             try:
-                idx, segment = q.get(block=False)
+                segment = q.get(block=False)
                 segment_id = segment['id']
                 
                 with lock:
-                    processed = len([v for v in result_dict.values() if v is not None])
-                    print(f"[{processed + 1}/{total_segments}] 🔄 Retry {segment_id}")
+                    processed_count['value'] += 1
+                    current = processed_count['value']
+                    print(f"[{current}/{total_segments}] 🔄 Retry {segment_id}")
                 
                 # Retry với số lần tối đa
                 success = False
                 last_error = None
+                translated_segment = None
                 
                 for attempt in range(max_retries):
                     try:
@@ -341,7 +358,7 @@ class RetryWorkflow:
                         }
                         
                         with lock:
-                            result_dict[idx] = translated_segment
+                            self.processor.append_segment_to_temp(translated_segment, self.temp_file)
                             self.logger.log_segment(
                                 segment_id, f"THÀNH CÔNG (retry {attempt + 1})",
                                 token_info=token_info
@@ -357,7 +374,6 @@ class RetryWorkflow:
                 
                 if not success:
                     with lock:
-                        result_dict[idx] = None
                         self.logger.log_segment(
                             segment_id, f"THẤT BẠI sau {max_retries} lần thử", last_error
                         )

@@ -136,20 +136,21 @@ def detect_volume(line):
     line = remove_bom(line)
     
     # Các pattern nhận diện quyển trong tiếng Trung
+    # SỬA: \d{1,3} -> \d+ để support volume/chapter lớn
     match_chinese = re.match(r'^第([零一二三四五六七八九十百千]+)卷\s*(.+)?', line)
-    match_arabic = re.match(r'^第(\d{1,3})卷\s*(.+)?', line)
+    match_arabic = re.match(r'^第(\d+)卷\s*(.+)?', line)
     
     # Pattern cho tiếng Việt
-    match_vietnamese_quyen = re.match(r'^[Qq]uyển\s*(\d{1,3})[.:]?\s*(.*)$', line)
-    match_vietnamese_tap = re.match(r'^[Tt]ập\s*(\d{1,3})[.:]?\s*(.*)$', line)
+    match_vietnamese_quyen = re.match(r'^[Qq]uyển\s*(\d+)[.:]?\s*(.*)$', line)
+    match_vietnamese_tap = re.match(r'^[Tt]ập\s*(\d+)[.:]?\s*(.*)$', line)
     
     # Pattern cho tiếng Anh
-    match_english = re.match(r'^[Vv]olume\s*(\d{1,3})[.:]?\s*(.*)$', line)
-    match_english_vol = re.match(r'^[Vv]ol\s*\.?\s*(\d{1,3})[.:]?\s*(.*)$', line)
-    match_english_book = re.match(r'^[Bb]ook\s*(\d{1,3})[.:]?\s*(.*)$', line)
+    match_english = re.match(r'^[Vv]olume\s*(\d+)[.:]?\s*(.*)$', line)
+    match_english_vol = re.match(r'^[Vv]ol\s*\.?\s*(\d+)[.:]?\s*(.*)$', line)
+    match_english_book = re.match(r'^[Bb]ook\s*(\d+)[.:]?\s*(.*)$', line)
     
     # Pattern bắt dòng đơn giản chỉ có dấu ":" như "Quyển 6:"
-    match_simple = re.match(r'^[Qq]uyển\s*(\d{1,3})\s*:$', line)
+    match_simple = re.match(r'^[Qq]uyển\s*(\d+)\s*:$', line)
     
     volume_number = None
     title = None
@@ -195,7 +196,7 @@ def detect_volume(line):
     
     # Kiểm tra đặc biệt cho dòng đơn giản như "Quyển 6"
     if volume_number is None:
-        simple_match = re.match(r'^[Qq]uyển\s*(\d{1,3})$', line)
+        simple_match = re.match(r'^[Qq]uyển\s*(\d+)$', line)
         if simple_match:
             volume_number = int(simple_match.group(1))
             title = f"Quyển {volume_number}"
@@ -208,14 +209,15 @@ def detect_chapter_title(line, max_chapter, previous_chapter_number):
     line = remove_bom(line)
     
     # Các pattern nhận diện tiêu đề chương, ƯU TIÊN "Chương" cao nhất
-    match_vietnamese = re.match(r'^[Cc]hương\s*(\d{1,3})', line, re.IGNORECASE)  # ƯU TIÊN CAO NHẤT
+    # SỬA: \d{1,3} -> \d+ để support chương 1000+
+    match_vietnamese = re.match(r'^[Cc]hương\s*(\d+)', line, re.IGNORECASE)  # ƯU TIÊN CAO NHẤT
     match_chinese = re.match(r'^第([零一二三四五六七八九十百千]+)章', line)
-    match_arabic = re.match(r'^第(\d{1,3})章', line)
-    match_chap = re.match(r'^[Cc]hap\s*(\d{1,3})', line, re.IGNORECASE)
+    match_arabic = re.match(r'^第(\d+)章', line)
+    match_chap = re.match(r'^[Cc]hap\s*(\d+)', line, re.IGNORECASE)
     match_chinese_hua = re.match(r'^第([零一二三四五六七八九十百千]+)话', line)
-    match_arabic_hua = re.match(r'^第(\d{1,3})话', line)
+    match_arabic_hua = re.match(r'^第(\d+)话', line)
     match_chinese_maku = re.match(r'^第([零一二三四五六七八九十百千]+)幕', line)
-    match_arabic_maku = re.match(r'^第(\d{1,3})幕', line)
+    match_arabic_maku = re.match(r'^第(\d+)幕', line)
 
     chapter_number = None
     title = line.strip() # SỬA: Luôn lấy cả dòng làm tiêu đề để đảm bảo chính xác
@@ -304,7 +306,7 @@ def split_content(file_path, max_chapter):
             if "序章" in line and volume_number is None and "第" in line and "卷" in line:
                 # Lấy phần volume từ đầu dòng đến trước "序章"
                 volume_part = line.split("序章")[0].strip()
-                if re.match(r'^第([零一二三四五六七八九十百千]+)卷', volume_part) or re.match(r'^第(\d{1,3})卷', volume_part):
+                if re.match(r'^第([零一二三四五六七八九十百千]+)卷', volume_part) or re.match(r'^第(\d+)卷', volume_part):
                     volume_number, volume_title = detect_volume(volume_part)
                     if volume_number and current_section:
                         sections.append((current_section_id or "none", current_section, current_chapter_title or "", current_chapter_for_segment))
@@ -548,9 +550,20 @@ def output_to_yaml_simple_segments(sections, output_file):
         # Nếu không có nội dung, bỏ qua segment này
         if not content_lines:
             continue
+        
+        # FIX: Xóa dòng đầu nếu nó trùng với title (tránh duplicate)
+        if content_lines and content_lines[0].strip() == chapter_title.strip():
+            content_lines = content_lines[1:]
+        
+        # Nếu sau khi xóa duplicate không còn content, bỏ qua
+        if not content_lines:
+            continue
             
         # Nối các dòng nội dung lại với dòng trống giữa mỗi dòng
         content = "\n\n".join(content_lines)
+        
+        # Thêm title vào đầu content với dấu ' ở đầu
+        content = f"'{chapter_title}\n\n{content}"
 
         all_segments.append({
             "id": f"Segment_{segment_counter}",
@@ -657,6 +670,15 @@ def output_to_yaml(sections, output_file, mode, max_chars):
                 
             title = section_lines[0]
             content_lines = section_lines[1:]
+            
+            # FIX: Xóa dòng đầu nếu nó trùng với title (tránh duplicate)
+            if content_lines and content_lines[0].strip() == title.strip():
+                content_lines = content_lines[1:]
+            
+            # Nếu sau khi xóa duplicate không còn content, bỏ qua
+            if not content_lines:
+                continue
+            
             current_segment = []
             current_length = 0
 
@@ -666,10 +688,13 @@ def output_to_yaml(sections, output_file, mode, max_chars):
                     # Tạo ID với thông tin volume nếu có
                     segment_id = f"Volume_{volume_number}_Chapter_{chapter_number}_Segment_{global_segment_counter}" if volume_number is not None else f"Chapter_{chapter_number}_Segment_{global_segment_counter}"
                     
+                    # Thêm title vào đầu content với dấu ' ở đầu
+                    content_with_title = f"'{title}\n\n" + "\n\n".join(current_segment)
+                    
                     all_segments.append({
                         "id": segment_id,
                         "title": title,
-                        "content": "\n\n".join(current_segment)
+                        "content": content_with_title
                     })
                     global_segment_counter += 1
                     volume_segment_counter += 1
@@ -683,10 +708,13 @@ def output_to_yaml(sections, output_file, mode, max_chars):
                 # Tạo ID với thông tin volume nếu có
                 segment_id = f"Volume_{volume_number}_Chapter_{chapter_number}_Segment_{global_segment_counter}" if volume_number is not None else f"Chapter_{chapter_number}_Segment_{global_segment_counter}"
                 
+                # Thêm title vào đầu content với dấu ' ở đầu
+                content_with_title = f"'{title}\n\n" + "\n\n".join(current_segment)
+                
                 all_segments.append({
                     "id": segment_id,
                     "title": title,
-                    "content": "\n\n".join(current_segment)
+                    "content": content_with_title
                 })
                 global_segment_counter += 1
                 volume_segment_counter += 1
