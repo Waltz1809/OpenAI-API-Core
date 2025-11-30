@@ -231,17 +231,22 @@ def process_ruby(soup: BeautifulSoup):
         else:
             ruby.replace_with(ruby.get_text(" ", strip=True))
 
-def element_text_with_image_tags(elem: BeautifulSoup):
+def element_html_with_image_tags(elem: BeautifulSoup):
     cloned = BeautifulSoup(str(elem), "html.parser")
+
+    # remove unwanted tags
     for bad in cloned.find_all(['script', 'style', 'head', 'title']):
         bad.decompose()
+
+    # normalize <img>
     for img in cloned.find_all('img'):
         src = img.get('src') or ""
         filename = Path(src.split('#')[0]).name
-        img.replace_with(f'<img src="{filename}"/>')
-    text = cloned.get_text(separator=" ", strip=True)
-    text = re.sub(r'\s+', ' ', text)
-    return text
+        img['src'] = filename
+
+    # KEEP HTML, do NOT flatten to text
+    return str(cloned)
+
 
 def html_to_markdown(html_text: str):
     md_text = md(html_text, heading_style="ATX")
@@ -452,19 +457,19 @@ def process_epub(epub_path: Path):
                 body_text = ""
                 if special_ps:
                     for p in special_ps:
-                        t = element_text_with_image_tags(p)
+                        t = element_html_with_image_tags(p)
                         if t:
                             body_text += t + "\n\n"
                 else:
                     all_p = soup.find_all('p')
                     if all_p:
                         for p in all_p:
-                            t = element_text_with_image_tags(p)
+                            t = element_html_with_image_tags(p)
                             if t:
                                 body_text += t + "\n\n"
                     else:
                         body = soup.find('body') or soup
-                        t = element_text_with_image_tags(body)
+                        t = element_html_with_image_tags(body)
                         if t:
                             body_text += t + "\n\n"
                 chapter_text_parts.append(body_text.strip())
